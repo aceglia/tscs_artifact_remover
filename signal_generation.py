@@ -71,26 +71,30 @@ def create_signal(original_emg, artifact_ratio, artifact_frequency, white_noise=
     max = np.max(original_emg)
     for f in artifact_frequency:
         artifact = get_artifact_template(f, original_emg.shape[0], rate, white_noise)
-        plt.plot(artifact)
-        plt.show()
+        artifact[:5000] = 0
+        # plt.plot(artifact)
+        # plt.show()
         max_artifact = np.max(artifact)
         for r in artifact_ratio:
             ratio_max = (max * r) / max_artifact
-            final_dic[f"data_with_ratio_{r}_{f}_hz"] = (original_emg + ratio_max * artifact)
+            final_dic[f"data_with_ratio_{r}_{f}_hz"] = (original_emg + ratio_max *2* artifact)
+            # plt.plot(final_dic[f"data_with_ratio_{r}_{f}_hz"])
+            # plt.show()
+
     if save_file:
         save(final_dic, save_path, safe=False)
     return final_dic
 
 
 if __name__ == '__main__':
-    file_path = r'D:\Documents\Udem\Postdoctorat\ameddeo\005tSCS\Gait\test_stim_artifact.txt'
-    h_2, data_2 = load_from_file(file_path)
-    data_2 = data_2[0, :, -1]
+    # file_path = r'D:\Documents\Udem\Postdoctorat\ameddeo\005tSCS\Gait\test_stim_artifact.txt'
+    # h_2, data_2 = load_from_file(file_path)
+    # data_2 = data_2[0, :, -1]
     emg_data = r"D:\Documents\Programmation\biosiglive\examples\abd.bio"
-    emg_data = load(emg_data)["emg"][2, 2000:] * 100
+    emg_data = load(emg_data)["emg"][2, 2000:] * 50
     artifact_dic = create_signal(emg_data, [0, 0.3, 0.5, 0.8, 1, 1.2, 1.5, 1.8], [15, 30, 50, 80],
                                   white_noise=True, save_file=True,
-                                 save_path="synth_data_with_artifact_all.bio")
+                                 save_path="synth_data_with_artifact_partial.bio")
     alpha = [0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1]
     count = 0
     for key in artifact_dic:

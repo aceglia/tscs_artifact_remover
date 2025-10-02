@@ -44,7 +44,7 @@ def _butter_highpass_filter(data, cutoff, fs, order=5):
     return y
 
 
-def filter_data(data, cutoff=450.0, order=5, fs=2000.0, filter_type='low'):
+def filter_data(data, cutoff=450.0, order=2, fs=2000.0, filter_type='low'):
     if filter_type == 'low':
         filter_function = _butter_lowpass_filter
     elif filter_type == 'band':

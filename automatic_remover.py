@@ -2,15 +2,16 @@ import json
 
 import os
 
-import ctypes
+import time
+
+import scipy
 
 from io_utils import load_txt_file, load_bio_file, handle_init_data
 from typing import Union, List
 from decomposition_utils import compute_svd, remove_singular_values
-from processing_utils import compute_envelope, compute_signal_comparison, filter_data
+from processing_utils import compute_signal_comparison, filter_data
 import matplotlib.pyplot as plt
 import numpy as np
-from gui_utils import Window
 
 
 class ArtefactRemover:
@@ -53,39 +54,76 @@ class ArtefactRemover:
             self.init_data = handle_init_data(path, center=True, signal_filter=True)
             self.is_data_loaded = True
 
+    @staticmethod
+    def get_signal_from_hankel_fast(hankel: np.ndarray) -> np.ndarray:
+        # Flip left-right to make antidiagonals become diagonals
+        flip_matrix = np.fliplr(hankel)
+
+        # Extract all possible anti-diagonal sums in one go
+        # summed = np.add.reduceat(
+        #     flip_matrix.ravel(),
+        #     np.r_[0, np.cumsum(np.repeat(np.arange(1, flip_matrix.shape[1]+1), 1))[:-1]]
+        # )
+
+        # Alternative simpler + clearer method:
+        # summed = np.array([flip_matrix.diagonal(offset=o).mean() 
+        #                    for o in range(flip_matrix.shape[1]-1, -flip_matrix.shape[0], -1)])
+
+        # Instead of looping: use bincount to compute mean per antidiagonal
+        rows, cols = np.indices(flip_matrix.shape)
+        antidiag_index = rows + cols   # constant along antidiagonals
+
+        summed = np.bincount(antidiag_index.ravel(), weights=flip_matrix.ravel())
+        counts = np.bincount(antidiag_index.ravel())
+        
+        return summed / counts
+    
+    def all_antidiagonals(arr):
+        m, n = arr.shape
+        flat = arr.ravel()
+        rows, cols = np.indices((m, n))
+        
+        # group by (row+col), which is constant on antidiagonals
+        keys = (rows + cols).ravel()
+        order = np.argsort(keys)
+        
+        flat_sorted = flat[order]
+        keys_sorted = keys[order]
+        
+        # split into diagonals
+        splits = np.flatnonzero(np.diff(keys_sorted)) + 1
+        return np.split(flat_sorted, splits)
 
     def get_signal_from_hankel(self, hankel):
-        # reconstruct the signal from the hankel matrix using the average of overlapping wndows
-        close = hankel.copy()
-        max_row, max_col = close.shape
-        # Create a list to store anti-diagonals
-        flip_matrix = np.fliplr(close)
+        # close = hankel.copy()
+        max_row, max_col = hankel.shape
+        flip_matrix = np.fliplr(hankel)
         offsets = np.arange(max_col- 1, -max_row, -1)
-        antidiag = [flip_matrix.diagonal(offset=offset) for offset in offsets]
-        reconstructed_signal = np.array([np.mean(antidiag[i]) for i in range(len(antidiag))])
+        reconstructed_signal = np.array([np.mean(flip_matrix.diagonal(offset=offset)) for offset in offsets])
         return reconstructed_signal
 
     def signal_decomposition(self, data, hankel_size=None, artefactless_signal=None, threshold=None,
-                             idx=0, window=None, color=None):
+                             idx=0, window=None, color=None, randomized=True, hankel=None):
         if not self.is_data_loaded and data is None:
             raise ValueError("Data not loaded")
         # compute rfft
-        data_init = data.copy()
-        window_init = window
-        if window is not None:
-            window_init = window.copy()
-            window[0] = int(window[0] - hankel_size)
-            window[1] = int(window[1] + hankel_size)
-            data = data[int(window[0]):int(window[1])]
+        # data_init = data.copy()
+        # window_init = window
+        # if window is not None:
+        #     window_init = window.copy()
+        #     window[0] = int(window[0] - hankel_size)
+        #     window[1] = int(window[1] + hankel_size)
+        #     data = data[int(window[0]):int(window[1])]
         self.u, self.s, self.v, self.hankel_matrix = compute_svd(data, n_rows=hankel_size,
-                                                                 hankel=None)
-        self.s_reduced = remove_singular_values(self.v.copy(), self.s.copy(), threshold=threshold, n_points=50)
-        self.signal_reduced = self.get_signal_from_hankel(self.u.copy() @ np.diag(self.s_reduced) @ self.v.copy())
+                                                                 hankel=hankel, randomized=randomized)
+        self.s_reduced = remove_singular_values(self.v, self.s, threshold=threshold, n_points=50)
+        # self.signal_reduced = self.get_signal_from_hankel(self.u @ np.diag(self.s_reduced) @ self.v)
+        self.signal_reduced = self.get_signal_from_hankel((self.u * self.s_reduced) @ self.v)
         self.signal_reduced = filter_data(self.signal_reduced[None, :, None])[0, :, 0]
-        if window_init is not None:
-            signal_reduced = data_init
-            signal_reduced[int(window_init[0]):int(window_init[1])] = self.signal_reduced[int(hankel_size):-int(hankel_size)]
-            self.signal_reduced = signal_reduced
+        # if window_init is not None:
+        #     signal_reduced = data_init
+        #     signal_reduced[int(window_init[0]):int(window_init[1])] = self.signal_reduced[int(hankel_size):-int(hankel_size)]
+        #     self.signal_reduced = signal_reduced
 
         if self.plot_figure:
             plt.figure("Singular values")
@@ -94,12 +132,13 @@ class ArtefactRemover:
             # plt.plot(self.s_reduced_flip, label="Reduced flipped", color='g')
             color = 'b' if not color else color
             plt.figure("Signal reduced")
-            plt.plot(data_init, label="Original", color='r', alpha=0.3)
+            plt.plot(data, label="Original", color='r', alpha=0.3)
             if artefactless_signal is not None:
                 plt.plot(artefactless_signal, label="Without artefacts", color='g', alpha=0.5)
             # plt.plot(self.signal_reduced_zero, label="Signal reduced before", color='k')
             # plt.plot(self.signal_reduced_flip_zero, label="Signal reduced before", color='r')
             plt.plot(self.signal_reduced, label=f"Signal reduced_{idx}", color=color)
+        return self.signal_reduced
 
 
     def compute_signal_error(self, original_signal, reduced_signal, baseline_idx=None, signal_idx=None, artefactless_signal=None, stim_time=0,
@@ -207,28 +246,133 @@ class ArtefactRemover:
 
 
 if __name__ == '__main__':
-    synth = False
+    synth = True
     # path_file = "synth_stim_artifact.bio" if synth else r"test_stim_artifact.txt"
-    path_file = "synth_stim_artifact_all.bio" if synth else r"test001.txt"
-    frame_idx = 0 if synth else 14  # index of the frame to process
+    path_file = "synth_stim_artifact_new.bio" if synth else r"test001.txt"
+    frame_idx = 0 if synth else 7  # index of the frame to process
     # json_path = 'windows_synth_signal.json' if synth else 'windows_test_signal.json'
     json_path = 'synth_data_window.json' if synth else f'test_emg_{frame_idx}.json'
-    idx_to_remove = 0 if synth else 0  # index of the channel to remove
-    path_file = r"D:\Documents\Udem\Postdoctorat\Projet transfert nerveux\data\test_HB_001\test_mapping_HB005.txt"
+    idx_to_remove = 5 if synth else 0  # index of the channel to remove
+    # path_file = r"D:\Documents\Udem\Postdoctorat\Projet transfert nerveux\data\test_HB_001\test_mapping_HB005.txt"
 
-    artefact_remover = ArtefactRemover(data=path_file, plot_figure=True)
+    artefact_remover = ArtefactRemover(data=path_file, plot_figure=False)
+    # for frame_idx in range(artefact_remover.init_data.shape[0]):
+    #     plt.plot(artefact_remover.init_data[frame_idx, :, 0], label="Original signal")
+    #     plt.show()
+
     signal_to_remove = artefact_remover.init_data[frame_idx, :, idx_to_remove]
     artefactless_signal = artefact_remover.init_data[frame_idx, :, 0] if synth else None
     # txt_file = "result_optim_synth_data_with_artifact_all.txt" 
 
-    size = 500
+    size = 350
     # if os.path.exists(txt_file):
     #     with open(txt_file) as f:
     #         data = f.readlines()
     #         size = int(float(data[-1].split(",")[1]))
-    artefact_remover.signal_decomposition(signal_to_remove,
-                                          hankel_size=size, artefactless_signal=artefactless_signal,
-                                          threshold=None)
+    update_wind = 20
+    signal_cleaned = np.zeros_like(signal_to_remove)
+    signal_filtered = np.zeros_like(signal_to_remove)
+    signal_to_filter = np.zeros_like(signal_to_remove)
+    wind_size_tot_svd = 1500
+    wind_size_tot = 8000
+
+    def append_data(data, data_appended):
+        # if data_appended size reach wind_size_tot_svd, discard old data and append new data
+        if data_appended is None:
+            data_appended = data
+        else:
+            data_appended = np.concatenate((data_appended[-(wind_size_tot_svd - data.shape[0]):], data), axis=0)
+        return data_appended
+    
+    # signal_to_remove = np.arange(1520)
+    # start_time = time.time()
+    # # scipy.linalg.hankel(new_data[::-1][1:], new_data)
+    # hankel_tot = scipy.linalg.hankel(signal_to_remove[:int(size)], signal_to_remove[int(size - 1):])
+    # print("hankel --- %s seconds ---" % (time.time() - start_time))
+    # new_data = signal_to_remove[1500:]
+    # hankel_ref = scipy.linalg.hankel(signal_to_remove[:1500][:int(size)], signal_to_remove[:1500][int(size - 1):])
+    import time
+
+    signal_to_remove_tmp = None
+    for i in range(signal_to_remove.shape[0] // update_wind):
+        new_data = signal_to_remove[i*update_wind:(i+1)*update_wind]
+        signal_to_remove_tmp = append_data(new_data, signal_to_remove_tmp)
+        start_time = time.time()
+        if signal_to_remove_tmp.shape[0] >= wind_size_tot_svd:
+            artefact_remover.signal_decomposition(signal_to_remove_tmp,
+                                                hankel_size=size, artefactless_signal=artefactless_signal,
+                                                threshold=None, randomized=True)
+            signal_cleaned[i*update_wind:(i+1)*update_wind] = artefact_remover.signal_reduced[-update_wind:]
+        print("SVD --- %s seconds ---" % (time.time() - start_time))
+
+    signal_to_remove_tmp = None
+    for i in range(signal_to_remove.shape[0] // update_wind):
+        start_time = time.time()
+        if signal_to_remove_tmp is None:
+            signal_to_remove_tmp = signal_to_remove[(i)*update_wind:(i+1)*update_wind]
+        else:
+            signal_to_remove_tmp = np.concatenate((signal_to_remove_tmp[-wind_size_tot + update_wind:],
+                                                    signal_to_remove[(i)*update_wind:(i+1)*update_wind]),
+                                                      axis=0)
+            
+        # if signal_to_remove_tmp.shape[0] > wind_size_tot_svd:
+        original_fft = np.fft.fft(signal_to_remove_tmp)
+
+        # get peaks in fft usng moving windows and find peak function in scipy
+        freq = np.fft.fftfreq(len(original_fft), 1 / 2000)
+        # if signal_to_remove_tmp.shape[0] == wind_size_tot:
+        #     plt.plot(freq, np.abs(original_fft))
+        #     plt.show()
+        fft = np.abs(original_fft[freq > 0])
+        freq = freq[freq > 0]
+        wind_size = 200
+        total_wind = int(len(fft) / wind_size)
+        total_idx = 0
+        peaks = []
+        for w in range(total_wind):
+            mean = np.mean(fft[w*wind_size:(w+1)*wind_size])
+            sd = np.std(fft[w*wind_size:(w+1)*wind_size])
+            # find peaks in fft 
+            peaks_tmp, _ = scipy.signal.find_peaks(fft[w*wind_size:(w+1)*wind_size], height=mean + 8*sd)
+            peaks.extend([p + w*wind_size for p in peaks_tmp])
+        fs = 2000
+        filtered_signal_tmp = signal_to_remove_tmp.copy()
+        for p in peaks:
+            f_noise = freq[p]
+            w0 = f_noise 
+            Q = 80  # Quality factor (determines bandwidth)
+
+            # Design the notch filter
+            b, a = scipy.signal.iirnotch(w0, Q, fs=fs)
+
+            # Apply the filter to the signal
+            filtered_signal_tmp = scipy.signal.filtfilt(b, a, filtered_signal_tmp)
+        signal_filtered[i*update_wind:(i+1)*update_wind] = filtered_signal_tmp[-update_wind:]
+        print("filter --- %s seconds ---" % (time.time() - start_time))
+
+    plt.plot(signal_to_remove, label="Original signal", alpha=0.3)
+    plt.plot(signal_filtered, label="Filtered signal")
+    plt.plot(signal_cleaned, label="Signal reduced")
+    plt.plot(artefactless_signal, label="Without artefacts", alpha=0.5)
+    plt.legend()
+    # artefact_remover.compute_signal_error(
+    #     original_signal=signal_to_remove[wind_size_tot_svd:],
+    #     reduced_signal=signal_cleaned[wind_size_tot_svd:], artefactless_signal=artefactless_signal[wind_size_tot_svd:],
+    #     json_path=json_path)
+    # artefact_remover.compute_frequency_analysis(
+    #     original_signal=signal_to_remove[wind_size_tot_svd:],
+    #     reduced_signal=signal_cleaned[wind_size_tot_svd:],
+    #     artefactless_signal=artefactless_signal[wind_size_tot_svd:])
+    
+    # artefact_remover.compute_signal_error(
+    #     original_signal=signal_to_remove[wind_size_tot_svd:],
+    #     reduced_signal=signal_filtered[wind_size_tot_svd:], artefactless_signal=artefactless_signal[wind_size_tot_svd:],
+    #     json_path=json_path)
+    # artefact_remover.compute_frequency_analysis(
+    #     original_signal=signal_to_remove[wind_size_tot_svd:],
+    #     reduced_signal=signal_filtered[wind_size_tot_svd:],
+    #     artefactless_signal=artefactless_signal[wind_size_tot_svd:])
+    plt.show()
     artefact_remover.plot()
     # artefact_remover.signal_decomposition(artefact_remover.signal_reduced,
     #                                     hankel_size=size, artefactless_signal=artefactless_signal,
