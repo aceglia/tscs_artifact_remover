@@ -1,6 +1,6 @@
 import numpy as np
 
-from automatic_remover import ArtefactRemover
+from artifact_remover.automatic_remover import ArtefactRemover
 from scipy.optimize import minimize_scalar, minimize
 from biosiglive import load
 from numba import njit

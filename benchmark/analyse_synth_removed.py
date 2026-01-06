@@ -1,4 +1,4 @@
-from automatic_remover import ArtefactRemover
+from artifact_remover.automatic_remover import ArtefactRemover
 import os
 import numpy as np
 from biosiglive import load, save

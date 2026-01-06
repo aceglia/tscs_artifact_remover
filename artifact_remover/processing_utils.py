@@ -55,8 +55,8 @@ def filter_data(data, cutoff=450.0, order=2, fs=2000.0, filter_type='low'):
         raise ValueError('Invalid filter type')
     filtered_data = np.zeros_like(data)
     for i in range(data.shape[0]):
-        for k in range(data.shape[-1]):
-            filtered_data[i, :, k] = filter_function(data[i, :, k], cutoff, fs, order=order)
+        for k in range(data.shape[1]):
+            filtered_data[i, k, :] = filter_function(data[i, k, :], cutoff, fs, order=order)
     return filtered_data
 
 
