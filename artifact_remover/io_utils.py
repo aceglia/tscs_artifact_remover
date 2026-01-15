@@ -108,7 +108,7 @@ class DataLoader:
         :param data: Description
         :param kwargs: Description
             kwargs might contains filters kwargs and loader kwargs as follows:
-            delimiter, center, signal_filter, cutoff, fs, order, from_ced_signal, channel_names, data_rate
+            delimiter, center, signal_filter, cutoff, fs, order, from_ced_signal, channel_names, data_rate, data_window
         """
         self.path = data if isinstance(data, str) else None
         self.data = data if isinstance(data, np.ndarray) else None
@@ -142,8 +142,8 @@ class DataLoader:
             self.__dict__[key] = kwargs.get(key, default[k])
 
     def get_data_params(self, **kwargs):
-        data_params = ["delimiter", "channel_names", "data_rate"]
-        default = ["\t", None, 2000]
+        data_params = ["delimiter", "channel_names", "data_rate", 'data_window']
+        default = ["\t", None, 2000, None]
         for k, key in enumerate(data_params):
             self.__dict__[key] = kwargs.get(key, default[k])
 

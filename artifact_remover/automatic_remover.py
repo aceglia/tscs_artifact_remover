@@ -12,6 +12,7 @@ from artifact_remover.decomposition_utils import (
 )
 from artifact_remover.solution import Solution
 from artifact_remover.processing_utils import filter_data
+from numba import njit
 
 
 class ArtefactRemover:
@@ -130,54 +131,78 @@ class ArtefactRemover:
 
     @staticmethod
     def _perform_decomposition(
-        data, hankel_size=None, threshold=None, randomized=True, filter=True, nb_principal_components=50
+        data,
+        hankel_size=None,
+        threshold=None,
+        randomized=True,
+        filter=True,
+        nb_principal_components=50,
+        empty_hankel=None,
+        return_dict=True,
+        n_reconstruct=None,
     ):
+        if return_dict:
+            out_dict = {
+                "data": data,
+            }
+        # hankel = scipy.linalg.hankel(data[:int(hankel_size)], data[int(hankel_size - 1):])
+        # signal_reduced = data
         u, s, v, hankel_matrix = compute_svd(
             data,
             n_rows=hankel_size,
-            hankel=None,
+            hankel=empty_hankel,
             randomized=randomized,
             nb_principal_components=nb_principal_components,
         )
-        s_reduced = remove_singular_values(v, s.copy(), threshold=threshold)
-        signal_reduced = get_signal_from_hankel((u * s_reduced) @ v)
-        unfiltered_signal = signal_reduced
+        if return_dict:
+            out_dict.update({"s": s})
+        s_reduced = remove_singular_values(v, s, threshold=threshold)
+        # tmp = (u * s_reduced) @ v
+
+        # tmp = u @ (v * s_reduced[None, :])
+        if n_reconstruct is not None:
+            # u *= s_reduced
+            # tmp = u @ v[:, -n_reconstruct:]
+            signal_reduced = get_signal_from_hankel(u @ (v[:, -n_reconstruct:] * s_reduced[:, None]))
+        else:
+            signal_reduced = get_signal_from_hankel(u @ (v * s_reduced[:, None]))
+        if return_dict:
+            out_dict["unfiltered_signal"] = signal_reduced.copy()
         if filter:
             signal_reduced = filter_data(signal_reduced[None, None, :])[0, 0, :]
-        out_dict = {
-            "data": data,
-            "unfiltered_signal": unfiltered_signal,
-            "output": signal_reduced,
-            "u": u,
-            "s": s,
-            "v": v,
-            "s_reduced": s_reduced,
-        }
-        return out_dict
+        if return_dict:
+            out_dict["output"] = signal_reduced
+            out_dict["u"] = u
+            out_dict["v"] = v
+            out_dict["s_reduced"] = s_reduced
+            return out_dict
+        else:
+            return signal_reduced
 
     @staticmethod
-    def _perform_notch_filter(frequency_peaks, data, fs=2000, quality_factor=150):
-        filtered_signal = data.copy()
-        freqs = np.fft.fftfreq(data.shape[0], 1 / fs)
+    def _perform_notch_filter(frequency_peaks, data, fs=2000, quality_factor=150, return_dict=True):
+        if return_dict:
+            out_dict = {"data": data.copy()}
         harmonics = [(frequency_peaks * i) for i in range(1, int((fs / 2) / frequency_peaks) + 1)]
-        for p in harmonics:
-            w0 = p
-            Q = quality_factor
-            b, a = scipy.signal.iirnotch(w0, Q, fs=fs)
-
-            # Apply the filter to the signal
-            filtered_signal = scipy.signal.filtfilt(b, a, filtered_signal)
-
-        out_dict = {
-            "data": data,
-            "unfiltered_signal": filtered_signal,
-            "output": filtered_signal,
-            "u": None,
-            "s": None,
-            "v": None,
-            "s_reduced": None,
-        }
-        return out_dict
+        for p, ha in enumerate(harmonics):
+            b, a = scipy.signal.iirnotch(ha, quality_factor, fs=fs)
+            filtered_signal = (
+                scipy.signal.filtfilt(b, a, data) if p == 0 else scipy.signal.filtfilt(b, a, filtered_signal)
+            )
+        if return_dict:
+            out_dict.update(
+                {
+                    "unfiltered_signal": filtered_signal,
+                    "output": filtered_signal,
+                    "u": None,
+                    "s": None,
+                    "v": None,
+                    "s_reduced": None,
+                }
+            )
+            return out_dict
+        else:
+            return filtered_signal
 
     def get_process_signal(self, filtered=True):
         return self.solution.get("signal_reduced") if filtered else self.solution.get("unfiltered_signal")
