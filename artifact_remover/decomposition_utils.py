@@ -15,7 +15,7 @@ def get_signal_from_hankel(hankel):
     reconstructed_signal = np.array([np.mean(flip_matrix.diagonal(offset=offset)) for offset in offsets])
     return reconstructed_signal
 
-def compute_svd(emg_signal, n_rows=800, hankel=None, randomized=True):
+def compute_svd(emg_signal, n_rows=800, hankel=None, randomized=True, nb_principal_components=50):
     if hankel is None or n_rows != hankel.shape[0]:
         hankel = scipy.linalg.hankel(emg_signal[:int(n_rows)], emg_signal[int(n_rows - 1):])
     
@@ -27,7 +27,7 @@ def compute_svd(emg_signal, n_rows=800, hankel=None, randomized=True):
         # U = transformer.components_
         # S = transformer.singular_values_
         # Vh = transformer.components_
-        U, S, Vh = pca(hankel, k=50, raw=True, n_iter=2)
+        U, S, Vh = pca(hankel, k=nb_principal_components, raw=True, n_iter=2)
 
         # U, S, Vh = scipy.sparse.linalg.svds(hankel, k=50, solver='arpack', which='LM',
                                             #  maxiter=10, return_singular_vectors=True)
@@ -38,7 +38,7 @@ def compute_svd(emg_signal, n_rows=800, hankel=None, randomized=True):
         
     return U, S, Vh, hankel
 
-def remove_singular_values(v, s, threshold=2, n_points=50):
+def remove_singular_values(v, s, threshold=2, weight_matrix=None):
 
     # Singular value diff thresholding
     # diff = s[:-1] - s[1:]
@@ -62,14 +62,18 @@ def remove_singular_values(v, s, threshold=2, n_points=50):
     #         ax[count].plot(all_fft[k])
     #         count += 1
     # plt.show()
+    # weight_matrix = weight_matrix if weight_matrix is not None else np.ones(s.shape)
 
     fft_max = all_fft.max(axis=1)
     # all_values = -np.sort(-fft_max)
     mean = fft_max.mean()
-    std = fft_max.std()
-    thres = threshold if threshold is not None else mean 
+    thres = threshold if threshold is not None else mean
     # s[fft_max > thres] = 0
-    s[fft_max < thres] = 0
+    if weight_matrix is None:
+        weight_matrix = np.ones(s.shape)
+        weight_matrix[fft_max > thres] = 0
+
+    s = s * weight_matrix
 
 
     # plt.scatter(np.arange(0, len(all_values)), all_values)

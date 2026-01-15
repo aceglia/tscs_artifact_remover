@@ -1,5 +1,4 @@
-from artifact_remover.automatic_remover import ArtefactRemover
-import matplotlib.pyplot as plt
+from artifact_remover.rt_automatic_remover import RtArtefactRemover
 
 
 if __name__ == "__main__":
@@ -9,8 +8,8 @@ if __name__ == "__main__":
     path_file = r'D:\Downloads\T1_008_arm_sa_002.mat'
     path_file = r"test001.txt"
     notch_filter=True
-    artefact_remover = ArtefactRemover(data=path_file, data_rate=1925.928779153747)
-    sol = artefact_remover.process(
+    artefact_remover = RtArtefactRemover(data=path_file, chunk_size=20)
+    sol = artefact_remover.process_all_data(
         hankel_size=300,
         randomized=False,
         # batch_idxs=[0],
