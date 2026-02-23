@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 import scipy.signal as signal
 from biosiglive import OfflineProcessing
+from scipy.fft import rfft, rfftfreq
 
 
 def _butter_bandpass(lowcut, highcut, fs, order=4):
@@ -60,6 +61,22 @@ def filter_data(data, cutoff=450.0, order=2, fs=2000.0, filter_type="low"):
     return filtered_data
 
 
+def robust_max_percentile(x, q=99.5):
+    return np.percentile(x, q, axis=-1)
+
+def median_frequency(data, fs=2000, fft=None, fft_freq=None):
+    """
+    data: shape (..., N)
+    returns: median frequency with shape (...)
+    """
+    fft_data = rfft(data, axis=-1) if fft is None else fft
+    power = np.abs(fft_data) ** 2
+    cumsum = np.cumsum(power, axis=-1)
+    half_energy = cumsum[..., -1:] / 2
+    idx = np.argmax(cumsum >= half_energy, axis=-1)
+    freqs = rfftfreq(data.shape[-1], d=1/fs) if fft_freq is None else fft_freq
+    return freqs[idx]
+
 def compute_envelope(data, fs=2000.0):
     proc_emg = OfflineProcessing(fs)
     emg_envelope = proc_emg.process_emg(
@@ -90,3 +107,22 @@ def compute_signal_comparison(data, ref_data, n_frame_stim=6000):
     amplitude_proc = np.sum(peak_to_peak_data[1]["peak_heights"])
     peaks_error = amplitude_ref - amplitude_proc
     return pearson, final_lag, peaks_error
+
+
+def merge_dict(old, new):
+    out_dict = {}
+    if 'data' in new:
+        new.pop('data')
+    if old is None:
+        for k, v in new.items():
+            if v.ndim > 1:
+                new[k] = v[None]
+        return new
+    for k, v in new.items():
+        if v.ndim > 1:
+            out_dict[k] = np.concatenate((old.get(k, []), v[None]))
+        else:
+            out_dict[k] = np.concatenate((old.get(k, []), v))
+    return out_dict
+        
+

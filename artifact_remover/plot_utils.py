@@ -4,15 +4,17 @@ import tkinter as tk
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.pyplot as plt
+from scipy.fft import rfft, rfftfreq
 
 
 class PlotSolution:
-    def __init__(self, signals=True, fft=False, singular_values=False, channel_names=()):
+    def __init__(self, signals=True, fft=False, singular_values=False, channel_names=(), data_rate=2000):
         self.next_button = None
         self.previous_button = None
         self.root = tk.Tk()
         self._create_prev_next_buttons()
         self.plot_signals = signals
+        self.data_rate = data_rate
         self.plot_fft = fft
         self.plot_singular_values = singular_values
         self.nb_suplot = sum([self.plot_signals, self.plot_fft, self.plot_singular_values])
@@ -108,9 +110,9 @@ class PlotSolution:
         for data in [init_fft, processed_fft, gt]:
             if data is None:
                 continue
-            fft_data = np.fft.fft(data)
-            freq = np.fft.fftfreq(data.shape[-1], 1 / 1925.928779153747)
-            ax.plot(freq[freq > 0], np.abs(fft_data[freq > 0]))
+            fft_data = np.abs(rfft(data))
+            freq = rfftfreq(data.shape[-1], 1 / self.data_rate)
+            ax.plot(freq, fft_data)
         text = "FFT" if self.analysis is None else "FFT - Analysis:" + f" MDFs = {mdfs}"
         ax.set_title(text)
         ax.legend(["Initial Signal", "Processed Signal", "Groundtruth Signal"])

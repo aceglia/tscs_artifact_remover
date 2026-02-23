@@ -72,9 +72,10 @@ def _load_from_wave_data(wave_data):
     items = list(wave_data[0][0].dtype.fields.keys())
     chanel_names = _get_chan_names(wave_data[0][0][items.index("chaninfo")].reshape(-1))
     frames = list(range(wave_data[0][0][items.index("frames")][0][0]))
+    data_rate = 1 / wave_data[0][0][items.index("interval")][0][0]
     array = wave_data[0][0][items.index("values")]
     array = np.swapaxes(array, 0, -1)
-    return array, chanel_names, frames
+    return array, chanel_names, frames, data_rate
 
 
 def load_mat_file(path):
@@ -118,7 +119,7 @@ class DataLoader:
         self.get_data_params(**kwargs)
         self.get_filtering_params(**kwargs)
         self.load_data()
-
+        self.stack_batch = stack_batch
         if stack_batch and self.init_data.shape[0] > 1:
             self._apply_stack_batch()
 

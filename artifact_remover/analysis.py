@@ -1,10 +1,16 @@
 import numpy as np
 import scipy
+from artifact_remover.processing_utils import median_frequency
 
 
 class Analysis:
     def __init__(
-        self, compute_signal_error=True, compute_frequency_analysis=True, average_batch=False, average_channels=False
+        self,
+        compute_signal_error=True,
+        compute_frequency_analysis=True,
+        average_batch=False,
+        average_channels=False,
+        data_rate=2000,
     ):
         self.compute_frequency_analysis = compute_frequency_analysis
         self.compute_signal_error = compute_signal_error
@@ -14,6 +20,7 @@ class Analysis:
         self.mdf_init_data = None
         self.mdf_processed_data = None
         self.correlation = None
+        self.data_rate = data_rate
         self.lag = None
         self.rmse = None
 
@@ -89,16 +96,6 @@ class Analysis:
             data_to_compute.extend([ground_truth_signal])
         mdfs = []
         for i in range(len(data_to_compute)):
-            data = data_to_compute[i]
-            fft_data = np.fft.fft(data)
-            freq = np.fft.fftfreq(data.shape[-1], 1 / 2000)
-            amp = np.abs(fft_data[:, :, freq > 0])
-            energy = amp**2
-            energy_cumsum = np.cumsum(energy, axis=-1)
-            freq = np.tile(freq, (fft_data.shape[0], fft_data.shape[1], 1))
-            mdf = np.zeros((fft_data.shape[0], fft_data.shape[1]))
-            energy_cumsum_half = np.max(energy_cumsum, axis=-1, keepdims=True) / 2
-            max_idx = np.argmax(energy_cumsum > energy_cumsum_half, axis=-1)
-            mdf = freq[np.arange(freq.shape[0])[:, None], np.arange(freq.shape[1]), max_idx]
+            mdf = median_frequency(data_to_compute[i], fs=self.data_rate)
             mdfs.append(mdf)
         return mdfs

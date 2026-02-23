@@ -7,7 +7,7 @@ from artifact_remover.analysis import Analysis
 
 
 class Solution:
-    def __init__(self):
+    def __init__(self, data_rate=None):
         self.data_init = None
         self.unfiltered_signal = None
         self.output = None
@@ -17,6 +17,7 @@ class Solution:
         self.s_reduced = None
         self.is_empty = True
         self.analysis = None
+        self.data_rate = data_rate
 
     def _from_dict(self, dict):
         for key, value in dict.items():
@@ -101,7 +102,7 @@ class Solution:
     def plot(self, signals=True, fft=False, singular_values=False, stack_batch=False, show_analysis=False):
         if show_analysis and self.analysis is None:
             raise RuntimeError("No analysis to show. Please run analyse() method before plotting analysis results.")
-        plotter = PlotSolution(signals=signals, fft=fft, singular_values=singular_values)
+        plotter = PlotSolution(signals=signals, fft=fft, singular_values=singular_values, data_rate=self.data_rate)
         results = self.analysis.get_results() if show_analysis else None
         plotter.plot(self._get_all_decomposition_output(), stack_batch=stack_batch, analysis=results)
 
@@ -119,6 +120,7 @@ class Solution:
             compute_frequency_analysis,
             average_batch=average_batch,
             average_channels=average_channels,
+            data_rate=self.data_rate
         )
         output = self.output if output_filtered else self.unfiltered_output
         return self.analysis.process(self.init_data, output, gt_signals=groundtruth_signals)
