@@ -1,16 +1,26 @@
 import csv
 import numpy as np
+from itertools import zip_longest
 from scipy.io import loadmat
 
 from biosiglive import load
 from artifact_remover.processing_utils import filter_data
 
 
-def handle_init_data(data, center=True, signal_filter=True, cutoff=450.0, fs=2000, order=2):
+def center_and_filter(data, center=True, signal_filter=True, cutoff=450.0, fs=2000, order=2):
     if center:
         data -= np.mean(data, axis=-1, keepdims=True)
     if signal_filter:
         filter_type = "band" if isinstance(cutoff, list) else "low"
+        raise_error = False
+        if filter_type == "low" and (cutoff / fs) >= 0.5:
+            raise_error = True
+        elif filter_type == "band" and (cutoff[1] / fs) >= 0.5:
+            raise_error = True
+        if raise_error:
+            raise RuntimeError(
+                f"Filter cutoff ({cutoff}) is not suitable for the frequency ({fs}). Try reduce the cutoff."
+            )
         data = filter_data(data, cutoff, order, fs, filter_type)
     return data
 
@@ -38,6 +48,7 @@ def load_txt_file(path, delimiter="\t"):
     frames = np.arange(0, len(frames))
     return array, channel_names, frames, data_rate
 
+
 def load_bio_file(data, channel_names=None):
     array, frames = None, None
     data = load(data)
@@ -60,7 +71,14 @@ def _load_mat_spike(data_dict):
     chanel_names = [str(chan[channel_content.index("title")][0]) for chan in all_chans]
     data_rate = 1 / float(all_chans[0][channel_content.index("interval")][0][0])
     frames = [0]
-    array = np.hstack([chan[channel_content.index("values")] for chan in all_chans]).T[None, ...]
+    idx_keyboard = [i for i, name in enumerate(chanel_names) if "keyboard" in name.lower()]
+    if len(idx_keyboard) != 0:
+        idx_keyboard = idx_keyboard[0]
+        chanel_names.pop(idx_keyboard)
+        all_chans.pop(idx_keyboard)
+    list_array = [np.array(chan[channel_content.index("values")]).flatten() for chan in all_chans]
+    arr_filled = [list(tpl) for tpl in zip(*zip_longest(*list_array))]
+    array = np.vstack(arr_filled)[None, ...]
     return array, chanel_names, frames, data_rate
 
 
@@ -87,21 +105,21 @@ def load_mat_file(path):
         file_name = str(mat_file["file"][0, 0][0][0])
         if file_name.endswith(".smrx"):
             return _load_mat_spike(mat_file)
-        
+
     wave_data = [key for key in mat_file.keys() if "wave_data" in key][0]
 
     if len(wave_data) > 0:
         return _load_from_wave_data(mat_file[wave_data])
-    
     else:
         raise ValueError("No recognized data found in the .mat file.")
+
 
 class DataLoader:
     """
     Docstring for DataLoader
     """
 
-    def __init__(self, data, stack_batch=False, **kwargs):
+    def __init__(self, data, stack_batch=False, ignore_filtering=False, **kwargs):
         """
         Docstring for __init__
 
@@ -113,12 +131,13 @@ class DataLoader:
         """
         self.path = data if isinstance(data, str) else None
         self.data = data if isinstance(data, np.ndarray) else None
+        self.time = None
         if self.path is None and self.data is None:
             raise RuntimeError("Data format is not recognized")
 
         self.get_data_params(**kwargs)
         self.get_filtering_params(**kwargs)
-        self.load_data()
+        self.load_data(ignore_filtering=ignore_filtering)
         self.stack_batch = stack_batch
         if stack_batch and self.init_data.shape[0] > 1:
             self._apply_stack_batch()
@@ -127,10 +146,12 @@ class DataLoader:
         self._unstack_shape = self.init_data.shape
         self.init_data = np.swapaxes(self.init_data, 0, 1)
         self.init_data = self.init_data.reshape(self.init_data.shape[0], -1)[None, ...]
-    
+
     def get_unstacked_data(self):
         if hasattr(self, "_unstack_shape"):
-            data = self.init_data[0, ...].reshape(self._unstack_shape[1], self._unstack_shape[0], self._unstack_shape[2])
+            data = self.init_data[0, ...].reshape(
+                self._unstack_shape[1], self._unstack_shape[0], self._unstack_shape[2]
+            )
             data = np.swapaxes(data, 0, 1)
             return data
         else:
@@ -139,14 +160,18 @@ class DataLoader:
     def get_filtering_params(self, **kwargs):
         filtering_params = ["cutoff", "order", "center", "signal_filter"]
         default = [450.0, 2, True, True]
+        self.filtering_params = {}
         for k, key in enumerate(filtering_params):
-            self.__dict__[key] = kwargs.get(key, default[k])
+            self.filtering_params[key] = kwargs.get(key, default[k])
+        self.__dict__.update(self.filtering_params)
 
     def get_data_params(self, **kwargs):
-        data_params = ["delimiter", "channel_names", "data_rate", 'data_window']
+        data_params = ["delimiter", "channel_names", "data_rate", "data_window"]
         default = ["\t", None, 2000, None]
+        self.loading_params = {}
         for k, key in enumerate(data_params):
-            self.__dict__[key] = kwargs.get(key, default[k])
+            self.loading_params[key] = kwargs.get(key, default[k])
+        self.__dict__.update(self.loading_params)
 
     def _load_files(self):
         if self.path.endswith(".txt"):
@@ -158,20 +183,26 @@ class DataLoader:
         else:
             raise ValueError("File format not supported")
 
-    def load_data(self):
+    def load_data(self, ignore_filtering=False):
         if self.path is not None:
             self._load_files()
         if self.data_rate is None:
             raise ValueError("Data rate must be provided if not loaded from file")
-        self.init_data = handle_init_data(
-            self.data,
+        self.init_data = self.apply_filtering() if not ignore_filtering else self.data
+        self.time = np.repeat((np.arange(0, self.init_data.shape[-1]) / self.data_rate)[None], self.init_data.shape[0], axis=0)
+        self.is_data_loaded = True
+
+    def apply_filtering(self, data=None):
+        to_filter = data if data is not None else self.data
+        filtered = center_and_filter(
+            to_filter,
             center=self.center,
             signal_filter=self.signal_filter,
             cutoff=self.cutoff,
             fs=self.data_rate,
             order=self.order,
         )
-        self.is_data_loaded = True
+        return filtered
 
     def flatten_data(self, data):
         self._data_shape = data.shape

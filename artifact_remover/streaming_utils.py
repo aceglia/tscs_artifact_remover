@@ -77,7 +77,7 @@ class DataStreamer:
             self.load_data(data, data_loader_kwargs)
 
     def load_data(self, data, data_loader_kwargs):
-        self.data_loader = DataLoader(data, stack_batch=True, **data_loader_kwargs)
+        self.data_loader = DataLoader(data, stack_batch=True, ignore_filtering=True, **data_loader_kwargs)
         self.init_data = self.data_loader.init_data
         self.is_data_loaded = True
 

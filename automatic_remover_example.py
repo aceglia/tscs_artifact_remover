@@ -6,24 +6,25 @@ if __name__ == "__main__":
     # Data need to be either a path to a file or a numpy array
     # If data is a numpy array, it should be of shape (n_batch, n_channels, n_samples)
     path_file = r"D:\Documents\Programmation\tscs_artifact_remover\004_TN-SCI_002.txt"
-    path_file = r'D:\Downloads\T1_008_arm_sa_002.mat'
-    # path_file = r'D:\Documents\Programmation\tscs_artifact_remover\007Loc_sa_20_Avec000.mat'
+    path_file = r"D:\Downloads\T1_008_arm_sa_002.mat"
+    path_file = r"D:\Documents\Programmation\tscs_artifact_remover\007Loc_sa_20_Avec000.txt"
     # path_file = r"test001.txt"
-    process_window = 5000
-    h_delay = 5
-    h_size = int(-((process_window / 2) - process_window) / h_delay)
+    process_window = 4000
+    h_delay = 1
+    h_size = int((process_window / 8) / h_delay)
+    print('Hankel matrix size is: ', '(', h_size, ',', process_window - (h_size - 1) * h_delay, ')')
 
-
-    notch_filter=False
-    artefact_remover = ArtefactRemover(data=path_file,  signal_filter=True, center=True, cutoff=[10, 500])
+    notch_filter = True
+    artefact_remover = ArtefactRemover(data=path_file, signal_filter=True, center=True, cutoff=[10, 500])
     sol = artefact_remover.process(
         hankel_size=h_size,
         randomized=False,
-        # batch_idxs=list(range(10, 11)),
-        channel_idxs=[-1],
-        # data_window=[0, 8000],
+        # batch_idxs=list(range(9, 10)),
+        # data_window=[0, 10000],
+
         data_window=[artefact_remover.get_init_signal().shape[-1] - (process_window * 4), artefact_remover.get_init_signal().shape[-1]-1000],
-        # data_window=[0, process_window],
+        # data_window=[process_window, process_window*20],
+        channel_idxs=[-1],
         threads=1,
         nb_principal_components=None,
         post_filter=False,

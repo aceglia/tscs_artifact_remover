@@ -26,19 +26,27 @@ class RtArtefactRemover(ArtefactRemover):
             self.to_evaluate_buffer.append(np.hstack([data, np.zeros_like(data)]))
         else:
             self.buffer.append(data)
-            output = self._remove_artifact_from_windows(self.buffer.get(), **process_kwargs)
-            self.to_evaluate_buffer.append(np.hstack([data, output[None]]))
-
-            if self.to_evaluate_buffer.full:
-                self._stream_evaluation(self.to_evaluate_buffer.get())
+            data = self.buffer.get()
+            data_tmp = self.streamer.data_loader.apply_filtering(data)
+            output = self._remove_artifact_from_windows(data_tmp, **process_kwargs)
+            # self.to_evaluate_buffer.append(np.hstack([data, output[None]]))
+            self._stream_evaluation(np.vstack([data[0], output[None]]))
+            if self.offline:
+                self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size] = output[-self.streamer.chunk_size :][
+                    None, :
+                ]
+            self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size]
+            # if self.to_evaluate_buffer.full:
+            #     self._stream_evaluation(self.to_evaluate_buffer.get())
 
     def _stream_evaluation(self, data):
         mdf = median_frequency(data, self.streamer.data_rate)
         max_perc = robust_max_percentile(data)
+
         # from artifact_remover.processing_utils import rfft
         # import matplotlib.pyplot as plt
-        # plt.plot(np.abs(rfft(data[0, 0])))
-        # plt.plot(np.abs(rfft(data[0, 1])))
+        # plt.plot(np.abs(rfft(data[0, :])))
+        # plt.plot(np.abs(rfft(data[1, :])))
         # # plt.plot(data[0, 0])
         # plt.show(block=True)
 
@@ -54,6 +62,14 @@ class RtArtefactRemover(ArtefactRemover):
         self.streamer.chunk_size = chunk_size if chunk_size else self.streamer.chunk_size
         import time
 
+        if not process_kwargs["notch_filter"]:
+            fft_freqs = np.fft.rfftfreq(
+                self.window_size - (process_kwargs["hankel_size"] - 1) * process_kwargs.get("hankel_delay", 1),
+                1 / self.streamer.data_loader.data_rate,
+            )
+        else:
+            fft_freqs = None
+        process_kwargs['fft_freqs'] = fft_freqs
         tic = time.time()
         for i in range(self.streamer.num_chunks):
             _, data_chunk = self.streamer.get_next_chunk(self.streamer.chunk_size)
@@ -64,7 +80,8 @@ class RtArtefactRemover(ArtefactRemover):
             "Total time to process data:",
             time.time() - tic,
             "its around: ",
-            np.round(((time.time() - tic) / self.streamer.num_chunks) * 1000, 2), "ms",
+            np.round(((time.time() - tic) / self.streamer.num_chunks) * 1000, 2),
+            "ms",
             np.round(1 / ((time.time() - tic) / self.streamer.num_chunks), 2),
             "FPS",
         )
@@ -76,14 +93,17 @@ class RtArtefactRemover(ArtefactRemover):
     def _remove_artifact_from_windows(
         self,
         data,
-        hankel_size=300,
+        hankel_size=None,
         randomized=True,
-        nb_principal_components=50,
+        nb_principal_components=None,
         epsilon=None,
         notch_filter=False,
         quality_factor=150,
         frequency_peaks=30,
         hankel_delay=1,
+        freq_bounds=[10, 450],
+        factor=0.5,
+        fft_freqs=None,
         **kwargs
     ):
         data = data.flatten()
@@ -92,23 +112,26 @@ class RtArtefactRemover(ArtefactRemover):
                 frequency_peaks, data, self.streamer.data_loader.data_rate, quality_factor, return_dict=False
             )
         else:
+            n_reconstruct = None #self.streamer.chunk_size if hankel_delay == 1 else None
             output = self._perform_decomposition(
                 data,
                 hankel_size,
-                None,
                 randomized,
                 False,
                 nb_principal_components,
-                n_reconstruct=self.streamer.chunk_size,
-                epsilon=epsilon,
-                offline=False,
-                hankel_delay=hankel_delay, 
-                return_dict=False,
-
+                n_reconstruct,
+                epsilon,
+                False,
+                hankel_delay,
+                False,
+                data_rate=self.streamer.data_loader.data_rate,
+                freq_bounds=freq_bounds,
+                factor=factor,
+                fft_freqs=fft_freqs,
             )
-
-        if self.offline:
-            self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size] = output[-self.streamer.chunk_size :][
-                None, :
-            ]
-            return self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size]
+        return output
+        # if self.offline:
+        #     self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size] = output[-self.streamer.chunk_size :][
+        #         None, :
+        #     ]
+        #     return self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size]

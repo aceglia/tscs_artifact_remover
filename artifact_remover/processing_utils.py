@@ -1,7 +1,6 @@
 import numpy as np
 import scipy
 import scipy.signal as signal
-from biosiglive import OfflineProcessing
 from scipy.fft import rfft, rfftfreq
 
 
@@ -77,18 +76,6 @@ def median_frequency(data, fs=2000, fft=None, fft_freq=None):
     freqs = rfftfreq(data.shape[-1], d=1/fs) if fft_freq is None else fft_freq
     return freqs[idx]
 
-def compute_envelope(data, fs=2000.0):
-    proc_emg = OfflineProcessing(fs)
-    emg_envelope = proc_emg.process_emg(
-        data[None, :],
-        band_pass_filter=True,
-        low_pass_filter=True,
-        moving_average=False,
-        centering=True,
-        absolute_value=True,
-    )[0, :]
-    return emg_envelope
-
 
 def compute_signal_comparison(data, ref_data, n_frame_stim=6000):
     correlation = signal.correlate(data[:], ref_data[: data.shape[0]])
@@ -115,11 +102,15 @@ def merge_dict(old, new):
         new.pop('data')
     if old is None:
         for k, v in new.items():
-            if v.ndim > 1:
+            if v is None:
+                new[k] = [None]
+            elif v.ndim > 1:
                 new[k] = v[None]
         return new
     for k, v in new.items():
-        if v.ndim > 1:
+        if v is None: 
+            out_dict[k] = np.hstack([old.get(k, [None]), [None]])
+        elif v.ndim > 1:
             out_dict[k] = np.concatenate((old.get(k, []), v[None]))
         else:
             out_dict[k] = np.concatenate((old.get(k, []), v))
