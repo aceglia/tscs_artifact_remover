@@ -11,70 +11,56 @@ from PyQt5.QtWidgets import (
     QInputDialog,
 )
 from PyQt5.QtCore import Qt
-from .gui_utils import LogBox
-from .file_dialog import LoadDialog
-from .cache import Cache
-from .popup_utils import popup_warning_split, popup_warning_continue, popup_warning_save
+from ..app.gui_utils import LogBox
+from ..app.file_dialog import LoadDialog
+from ..app.cache import Cache
+from ..app.popup_utils import popup_warning_split, popup_warning_continue, popup_warning_save
+from .artifact_widget import ArtifactWidget
 
-from .processing_widget import ProcessingWidget
 
-class CustomToolBar:
-    def __init__(self, parent):
-        self.menu_bar = parent.menuBar()
+class CustomToolBar(QToolBar):
+    def __init__(self, parent=None):
+        super().__init__()
         self.parent = parent
-        self._file_menu()
-        self._filter_menu()
-    
-    def _file_menu(self):
-        self.file_menu = self.menu_bar.addMenu("File")
-        self.load_files_button = self.file_menu.addAction("Load file")
+        self.load_files_button = QAction("Load EMG file")
         self.load_files_button.triggered.connect(self.parent._load_file)
         self.load_files_button.setEnabled(True)
-        self.load_config_button = self.file_menu.addAction("Load config")
+        self.load_config_button = QAction("Load config")
         self.load_config_button.triggered.connect(self.parent._load_config)
         self.load_config_button.setEnabled(True)
-        self.save_config_button = self.file_menu.addAction("Save")
+        self.save_config_button = QAction("Save")
         self.save_config_button.triggered.connect(self.parent.save)
         self.save_config_button.setEnabled(False)
-        self.save_as_config_button = self.file_menu.addAction("Save As")
+        self.save_as_config_button = QAction("Save As")
         self.save_as_config_button.triggered.connect(self.parent.save_as)
         self.save_as_config_button.setEnabled(False)
-        self.quit_button = self.file_menu.addAction("Quit")
+        self.quit_button = QAction("Quit")
         self.quit_button.triggered.connect(self.parent.quit)
-    
-    def _filter_menu(self):
-        self.filter_menu = self.menu_bar.addMenu("Filter")
-        self.radio_notch_filter_button = self.filter_menu.addAction("Notch filter")
-        self.radio_notch_filter_button.setEnabled(False)
-        self.radio_notch_filter_button.triggered.connect(self.parent.notch_selected)
-        self.radio_svd_filter_button = self.filter_menu.addAction("SVD filter")
-        self.radio_svd_filter_button.setEnabled(True)
-        self.radio_svd_filter_button.triggered.connect(self.parent.svd_selected)
-        self.disable_filter_menu()
-    
-    def disable_filter_menu(self):
-        self.filter_menu.setEnabled(False)
-    
-    def enable_filter_menu(self):
-        self.filter_menu.setEnabled(True)
+        self.addAction(self.load_files_button)
+        # self.addAction(self.save_files_button)
+        self.addAction(self.load_config_button)
+        self.addAction(self.save_config_button)
+        self.addAction(self.save_as_config_button)
+        self.addSeparator()
+        self.addAction(self.quit_button)
+        # set fixed
+        self.setMovable(False)
 
 
 class GUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Artifact Remover")
+        self.setWindowTitle("Artifact Generator")
         self.log_box = LogBox()
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         app_dir = os.getcwd()
         self._quit = False
         self._continue = False
-        self.cache = Cache(cache_file=os.path.join(app_dir, "_pychache.json"))
-        self.file_to_process = None
-        self.current_filter = "notch"
-        self.processing_widget = ProcessingWidget(self)
+        self.cache = Cache(cache_file=os.path.join(app_dir, "_generator_pychache.json"))
         self.toolbar = CustomToolBar(self)
-        # self.addToolBar(self.toolbar)
+        self.addToolBar(self.toolbar)
+        self.generator_widget = ArtifactWidget(self)
         self._init_layout()
         self.show()
         self.saved_ok = True
@@ -90,24 +76,10 @@ class GUI(QMainWindow):
         splitter.addWidget(self.clear_log_button)
         main_layout = QVBoxLayout()
         main_splitter = QSplitter(Qt.Vertical)
-        main_splitter.addWidget(self.processing_widget)
+        main_splitter.addWidget(self.generator_widget)
         main_splitter.addWidget(splitter)
         main_layout.addWidget(main_splitter)
         self.central_widget.setLayout(main_layout)
-
-    def notch_selected(self):
-        self.current_filter = "notch"
-        self.toolbar.radio_svd_filter_button.setEnabled(True)
-        self.toolbar.radio_notch_filter_button.setEnabled(False)
-        self.log_box.log("Notch filter selected")
-        self.processing_widget.update_filter("notch")
-
-    def svd_selected(self):
-        self.current_filter = "svd"
-        self.toolbar.radio_notch_filter_button.setEnabled(True)
-        self.toolbar.radio_svd_filter_button.setEnabled(False)
-        self.log_box.log("SVD filter selected")
-        self.processing_widget.update_filter("svd")
 
     def _load_file(self):
         if not self.saved_ok:
@@ -118,19 +90,17 @@ class GUI(QMainWindow):
                 return
         LoadDialog(
             parent=self,
-            caption="Load file",
+            caption="Load EMG file",
             filter="Matlab format (version < 7) (*.mat);;Text file (*.txt);; Biosiglive format (*.bio)",
             load_method=self.processing_widget.set_file,
         )
-        if self.processing_widget.canceled:
-            return
         # self.toolbar.save_files_button.setEnabled(True)
         self.default_save_name = self.processing_widget.file_path.replace(".mat", "")
         self.toolbar.save_config_button.setEnabled(True)
         self.toolbar.save_as_config_button.setEnabled(True)
 
     def _save_file(self):
-        file_path = self.default_save_name + "_processed.mat"
+        file_path = self.default_save_name + "_with_artifacts.mat"
         self.log_box.log(f"Saving file at: {file_path}")
         self.processing_widget.save_file(file_path)
 
@@ -152,7 +122,7 @@ class GUI(QMainWindow):
         self.toolbar.save_as_config_button.setEnabled(True)
 
     def _save_config(self):
-        file_path = self.default_save_name.replace(".mat", "_configuration.json")
+        file_path = self.default_save_name.replace(".mat", "_generator_configuration.json")
         self.log_box.log(f"Saving configuration file at: {file_path}")
         self.processing_widget.save_config(file_path)
 

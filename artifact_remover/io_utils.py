@@ -9,7 +9,7 @@ from artifact_remover.processing_utils import filter_data
 
 def center_and_filter(data, center=True, signal_filter=True, cutoff=450.0, fs=2000, order=2):
     if center:
-        data -= np.mean(data, axis=-1, keepdims=True)
+        data -= np.nanmean(data, axis=-1, keepdims=True)
     if signal_filter:
         filter_type = "band" if isinstance(cutoff, list) else "low"
         raise_error = False
@@ -49,19 +49,60 @@ def load_txt_file(path, delimiter="\t"):
     return array, channel_names, frames, data_rate
 
 
+def load_csv_file(path, delimiter="\t"):
+    """
+    CSV file must contain the channel names in the first row the delimiter should be tab (\t). 
+    An optional first column can contain the reccoring times, if so the frame rate will be computed from the difference between two consecutive reccoring times.
+    """
+    rows = []
+    with open(path, newline='') as file:
+        reader = csv.reader(file, delimiter=delimiter)
+        headers = next(reader)
+        for row in reader:
+            rows.append(row)
+    array = np.array(rows).astype(float).T
+    array = array[None]
+    channel_names = headers
+    frames = 1
+    if headers[0] == 'time':
+        data_rate = 1 / np.mean(np.diff(array[0, :, 0]))
+        channel_names = headers[1:]
+        array = array[:, 1:, :]
+    array[array == None] = np.nan
+    return array, channel_names, frames, data_rate
+
+
+def ensure_array_dim(array):
+    if array.ndim == 1:
+        array = array[None, None]
+    elif array.ndim == 2 :
+        array = array[None, :]
+    elif array.ndim == 3:
+        pass
+    else:
+        raise RuntimeError('Shape of the data must be (epochs, n_channels, n_frames) or (n_channels, n_frames) or (n_frames).')
+    return array
+
+
+def load_from_dict(data_dic):
+    array = ensure_array_dim(data_dic["values"])
+    frames = array.shape[0]
+    if "channel_names" in data_dic.keys():
+        channel_names = data_dic["channel_names"]
+    elif channel_names is None:
+        channel_names = [f"chanel_{i}" for i in range(array.shape[1])]
+    else:
+        channel_names = channel_names
+    data_rate = None
+    if "data_rate" in data_dic.keys():
+        data_rate = data_dic["data_rate"]
+    return array, channel_names, frames, data_rate
+
+
 def load_bio_file(data, channel_names=None):
-    array, frames = None, None
     data = load(data)
-    frames = list(data.keys())
-    for key in data.keys():
-        if isinstance(data[key], np.ndarray):
-            array = data[key] if array is None else np.vstack((array, data[key]))
-        else:
-            pass
-    array = array.T[None, ...]
-    if channel_names is None:
-        channel_names = [f"chanel_{i}" for i in range(array.shape[-1])]
-    return array, channel_names, frames, None
+    data['channel_names'] = channel_names
+    return load_from_dict(data)
 
 
 def _load_mat_spike(data_dict):
@@ -79,6 +120,8 @@ def _load_mat_spike(data_dict):
     list_array = [np.array(chan[channel_content.index("values")]).flatten() for chan in all_chans]
     arr_filled = [list(tpl) for tpl in zip(*zip_longest(*list_array))]
     array = np.vstack(arr_filled)[None, ...]
+    # change None with nan
+    array[array == None] = np.nan
     return array, chanel_names, frames, data_rate
 
 
@@ -103,7 +146,7 @@ def load_mat_file(path):
         raise ValueError("Not able to load the .mat file. Try exporting in version 6 or lower of matlab.")
     if "file" in mat_file.keys():
         file_name = str(mat_file["file"][0, 0][0][0])
-        if file_name.endswith(".smrx"):
+        if "smr" in file_name.split(".")[-1]:
             return _load_mat_spike(mat_file)
 
     wave_data = [key for key in mat_file.keys() if "wave_data" in key][0]
@@ -167,7 +210,7 @@ class DataLoader:
 
     def get_data_params(self, **kwargs):
         data_params = ["delimiter", "channel_names", "data_rate", "data_window"]
-        default = ["\t", None, 2000, None]
+        default = ["\t", None, None, None]
         self.loading_params = {}
         for k, key in enumerate(data_params):
             self.loading_params[key] = kwargs.get(key, default[k])
@@ -180,8 +223,14 @@ class DataLoader:
             self.data, self.channel_names, self.frames, self.data_rate = load_bio_file(self.path, self.channel_names)
         elif self.path.endswith(".mat"):
             self.data, self.channel_names, self.frames, self.data_rate = load_mat_file(self.path)
+        elif self.path.endswith(".csv"):
+            self.data, self.channel_names, self.frames, self.data_rate = load_csv_file(self.path, self.delimiter)
         else:
             raise ValueError("File format not supported")
+        if self.data_rate is None and self.loading_params["data_rate"] is not None: 
+            self.data_rate = self.loading_params["data_rate"]
+        elif self.data_rate is None:
+            raise ValueError("Data rate must be provided if not loaded from file")
 
     def load_data(self, ignore_filtering=False):
         if self.path is not None:
@@ -189,7 +238,9 @@ class DataLoader:
         if self.data_rate is None:
             raise ValueError("Data rate must be provided if not loaded from file")
         self.init_data = self.apply_filtering() if not ignore_filtering else self.data
-        self.time = np.repeat((np.arange(0, self.init_data.shape[-1]) / self.data_rate)[None], self.init_data.shape[0], axis=0)
+        self.time = np.repeat(
+            (np.arange(0, self.init_data.shape[-1]) / self.data_rate)[None], self.init_data.shape[0], axis=0
+        )
         self.is_data_loaded = True
 
     def apply_filtering(self, data=None):
@@ -211,3 +262,22 @@ class DataLoader:
     def unflatten_data(self, data, data_shape=None):
         data_shape = data_shape or self._data_shape
         return data.reshape(data_shape)
+
+
+def export_csv(path, raw_data, processed_data_svd, processed_data_notch, channels, rate):
+    final_mat = None
+    for data in [raw_data, processed_data_notch, processed_data_svd]:
+        data_stacked = data.transpose(1, 0, -1)
+        data_stacked = data_stacked[:, :, :-1].reshape(raw_data.shape[1], -1)
+        final_mat = data_stacked if final_mat is None else np.vstack((final_mat, data_stacked))
+    channels.extend(sum([], [c + "_notch_processed" for c in channels] + [c + "_svd_processed" for c in channels]))
+    comments = f"Data rate: {rate} | {raw_data.shape[0]} frames | {raw_data.shape[-1]} samples per frame\n"
+    headers = channels
+    data_to_write = final_mat.T
+    np.savetxt(
+        path.replace(".mat", ".txt"),
+        data_to_write,
+        header=comments + "\t".join(headers),
+        delimiter="\t",
+        comments="",  # removes the default '#' before header
+    )

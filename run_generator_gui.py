@@ -1,4 +1,4 @@
-from artifact_remover.app.gui import GUI
+from artifact_remover.generator_app.generator_gui import GUI
 from PyQt5.QtWidgets import QApplication
 import sys
 

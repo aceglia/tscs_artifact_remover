@@ -20,6 +20,7 @@ class ArtefactRemover:
         self.transformer = None
         self.is_txt_file = False
         self.is_data_loaded = False
+        self.solution = None
 
         if data is not None:
             self.load_data(data, data_loader_kwargs)
@@ -43,13 +44,13 @@ class ArtefactRemover:
         notch_filter=False,
         quality_factor=150,
         frequency_peaks=30,
+        first_peak=None,
         hankel_delay=1,
         process_window=None,
         freq_bounds=[10, 450],
-        factor=0.5, 
+        factor=0.5,
     ) -> Solution:
         self.solution = Solution(self.data_loader.data_rate)
-
         print("Processing signals, this might take a while...")
         data = self.data_loader.init_data
         if batch_idxs and not self.data_loader.stack_batch:
@@ -70,39 +71,31 @@ class ArtefactRemover:
         data = self.data_loader.flatten_data(data)
         data_rate = self.data_loader.data_rate
         list_results = []
-        fft_freqs = np.fft.rfftfreq(process_window - (hankel_size - 1) * hankel_delay, 1/data_rate)
+        fft_freqs = np.fft.rfftfreq(process_window - (hankel_size - 1) * hankel_delay, 1 / data_rate)
         if threads == 1:
             for d in range(data.shape[0]):
-                if notch_filter:
-                    list_results.append(
-                        self._perform_window_notch(
-                            frequency_peaks=frequency_peaks,
-                            data=data[d],
-                            fs=data_rate,
-                            quality_factor=quality_factor,
-                            window=process_window
-                        )
+                list_results.append(
+                    self.perform_window_process(
+                        frequency_peaks=frequency_peaks,
+                        data=data[d],
+                        fs=data_rate,
+                        quality_factor=quality_factor,
+                        first_peak=first_peak,
+                        hankel_size=hankel_size,
+                        randomized=randomized,
+                        filter=post_filter,
+                        nb_principal_components=nb_principal_components,
+                        epsilon=epsilon,
+                        hankel_delay=hankel_delay,
+                        window=process_window,
+                        data_rate=data_rate,
+                        freq_bounds=freq_bounds,
+                        factor=factor,
+                        fft_freqs=fft_freqs,
+                        notch=notch_filter,
                     )
-                else:
-                    list_results.append(
-                        self._perform_window_decomposition(
-                            data[d],
-                            hankel_size,
-                            randomized,
-                            post_filter,
-                            nb_principal_components,
-                            None,
-                            epsilon,
-                            True,
-                            hankel_delay,
-                            True,
-                            window=process_window, 
-                            data_rate=data_rate, 
-                            freq_bounds=freq_bounds,
-                            factor=factor, 
-                            fft_freqs=fft_freqs,
-                        )
-                    )
+                )
+
         else:
             args = [
                 (
@@ -116,9 +109,10 @@ class ArtefactRemover:
                     notch_filter,
                     quality_factor,
                     frequency_peaks,
+                    first_peak,
                     hankel_delay,
-                    process_window, 
-                    data_rate
+                    process_window,
+                    data_rate,
                 )
                 for b in range(data.shape[0])
             ]
@@ -141,57 +135,40 @@ class ArtefactRemover:
             notch_filter,
             quality_factor,
             frequency_peaks,
+            first_peak,
             hankel_delay,
-            window, 
-            data_rate, 
+            window,
+            data_rate,
             freq_bounds,
-            factor, 
-            fft_freqs    
+            factor,
+            fft_freqs,
         ) = args
-        if notch_filter:
-            return ArtefactRemover()._perform_window_notch(
-                frequency_peaks=frequency_peaks,
-                data=data,
-                fs=2000,
-                quality_factor=quality_factor,
-                window=window
-            )
-        return ArtefactRemover()._perform_window_decomposition(
-        data,
-        hankel_size,
-        randomized,
-        post_filter,
-        nb_principal_components,
-        None,
-        epsilon,
-        True,
-        hankel_delay,
-        True,
-        window=window, 
-        data_rate=data_rate, 
-        freq_bounds=freq_bounds,
-        factor=factor, 
-        fft_freqs=fft_freqs,
+        return ArtefactRemover().perform_window_process(
+            frequency_peaks=frequency_peaks,
+            data=data,
+            fs=data_rate,
+            quality_factor=quality_factor,
+            first_peak=first_peak,
+            hankel_size=hankel_size,
+            randomized=randomized,
+            filter=post_filter,
+            nb_principal_components=nb_principal_components,
+            n_reconstruct=None,
+            epsilon=epsilon,
+            offline=True,
+            hankel_delay=hankel_delay,
+            return_dict=True,
+            window=window,
+            data_rate=data_rate,
+            freq_bounds=freq_bounds,
+            factor=factor,
+            fft_freqs=fft_freqs,
+            notch=notch_filter,
         )
 
     @staticmethod
-    def _perform_window_decomposition(
-        data,
-        hankel_size=None,
-        randomized=False,
-        filter=True,
-        nb_principal_components=None,
-        n_reconstruct=None,
-        epsilon=None,
-        offline=True,
-        hankel_delay=1,
-        return_dict=True,
-        window=5000,
-        data_rate=None, 
-        freq_bounds=[10, 450],
-        factor=0.5, 
-        fft_freqs=None    
-    ):
+    def perform_window_process(data, return_dict=True, window=10000, notch=False, **kwargs):
+        fct = ArtefactRemover()._perform_notch_filter if notch else ArtefactRemover()._perform_decomposition
         if return_dict:
             init_data = data.copy()
         count = 0
@@ -210,87 +187,26 @@ class ArtefactRemover:
                     data_tmp = data[count : count + window]
             else:
                 data_tmp = data[count : count + window]
-            res_tmp = ArtefactRemover()._perform_decomposition(
-                data_tmp,
-                hankel_size=hankel_size,
-                randomized=randomized,
-                filter=filter,
-                nb_principal_components=nb_principal_components,
-                n_reconstruct=n_reconstruct,
-                epsilon=epsilon,
-                offline=offline,
-                hankel_delay=hankel_delay,
-                return_dict=return_dict,
-                data_rate=data_rate,
-                freq_bounds=freq_bounds,
-                factor=factor,
-                fft_freqs=fft_freqs
-            )
+            res_tmp = fct(data=data_tmp, **kwargs)
             if return_dict:
                 if overlap != 0:
-                    res_tmp['output'] = res_tmp['output'][overlap:]
-                res = merge_dict(res, res_tmp) 
+                    res_tmp["output"] = res_tmp["output"][overlap:]
+                res = merge_dict(res, res_tmp)
             else:
                 res = np.concatenate((res, res_tmp[overlap:])) if res is not None else res_tmp
-            
+
             count += window
             if break_at_end or count >= len_d:
                 break
 
-        sig_to_filt = res if not return_dict else res['output'].copy()
+        sig_to_filt = res if not return_dict else res["output"].copy()
         if filter:
             signal_filtered = filter_data(sig_to_filt[None, None, :])[0, 0, :]
             if return_dict:
                 res["output"] = signal_filtered
         if return_dict:
-            res['data'] = init_data
-            res['unfiltered_signal'] = sig_to_filt
-        return res
-
-    def _perform_window_notch(self, frequency_peaks, data, fs=2000, quality_factor=150, return_dict=True, window=10000):
-        if return_dict:
-            init_data = data.copy()
-        count = 0
-        len_d = len(data)
-        break_at_end = False
-        res = None
-        while True:
-            overlap = 0
-            if count != 0:
-                available_wind = min(len_d - count, window)
-                if available_wind < window:
-                    overlap = window - available_wind
-                    data_tmp = np.concatenate((data[count - overlap : count], data[count : count + available_wind]))
-                    break_at_end = True
-                else:
-                    data_tmp = data[count : count + window]
-            else:
-                data_tmp = data[count : count + window]
-            res_tmp = ArtefactRemover()._perform_notch_filter(
-                frequency_peaks=frequency_peaks,
-                data=data_tmp,
-                fs=fs,
-                quality_factor=quality_factor,
-            )
-            if return_dict:
-                if overlap != 0:
-                    res_tmp['output'] = res_tmp['output'][overlap:]
-                res = merge_dict(res, res_tmp) 
-            else:
-                res = np.concatenate((res, res_tmp[overlap:])) if res is not None else res_tmp
-            
-            count += window
-            if break_at_end or count >= len_d:
-                break
-
-        sig_to_filt = res if not return_dict else res['output'].copy()
-        if filter:
-            signal_filtered = filter_data(sig_to_filt[None, None, :])[0, 0, :]
-            if return_dict:
-                res["output"] = signal_filtered
-        if return_dict:
-            res['data'] = init_data
-            res['unfiltered_signal'] = sig_to_filt
+            res["data"] = init_data
+            res["unfiltered_signal"] = sig_to_filt
         return res
 
     @staticmethod
@@ -305,10 +221,11 @@ class ArtefactRemover:
         offline=True,
         hankel_delay=1,
         return_dict=True,
-        data_rate= None, 
+        data_rate=None,
         freq_bounds=[10, 450],
-        factor=0.5, 
-        fft_freqs=None    
+        factor=0.5,
+        fft_freqs=None,
+        **kwargs
     ):
         if return_dict:
             out_dict = {
@@ -327,7 +244,9 @@ class ArtefactRemover:
         if return_dict:
             out_dict.update({"s": s.copy()})
         # rem_fct = remove_singular_values_offline if offline else remove_singular_values
-        s_reduced, v, u = remove_singular_values(v, s, u, data_rate=data_rate, freq_bounds=freq_bounds, factor=factor, fft_freqs=fft_freqs)
+        s_reduced, v, u = remove_singular_values(
+            v, s, u, data_rate=data_rate, freq_bounds=freq_bounds, factor=factor, fft_freqs=fft_freqs
+        )
 
         if n_reconstruct is not None:
             signal_reduced = get_signal_from_hankel(u @ (v[:, -n_reconstruct:] * s_reduced[:, None]), hankel_delay)
@@ -347,10 +266,13 @@ class ArtefactRemover:
             return signal_reduced
 
     @staticmethod
-    def _perform_notch_filter(frequency_peaks, data, fs=2000, quality_factor=150, return_dict=True):
+    def _perform_notch_filter(
+        frequency_peaks, data, fs=2000, quality_factor=150, return_dict=True, first_peak=None, **kwargs
+    ):
         if return_dict:
             out_dict = {"data": data.copy()}
-        harmonics = [(frequency_peaks * i) for i in range(1, int((fs / 2) / frequency_peaks) + 1)]
+        first_peak = frequency_peaks if first_peak is None else first_peak
+        harmonics = [i * frequency_peaks + first_peak for i in range(0, int((fs / 2) / frequency_peaks) + 1)]
         for p, ha in enumerate(harmonics):
             try:
                 b, a = scipy.signal.iirnotch(ha, quality_factor, fs=fs)

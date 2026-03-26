@@ -1,7 +1,7 @@
 import json
 
 from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout, QHBoxLayout, QMessageBox
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThreadPool
 
 import numpy as np
 import scipy.io as sio
@@ -9,7 +9,10 @@ from scipy.interpolate import interp1d
 from .remover_widget import Remover
 from .display_options import DisplayWidget
 from .plot_widget import Plotter
-from .utils import ensure_list
+from .gui_utils import ensure_list
+from .gui_utils import Worker
+from ..io_utils import export_csv
+from .popup_utils import FilterDialog
 
 
 class ProcessingWidget(QWidget):
@@ -25,6 +28,10 @@ class ProcessingWidget(QWidget):
         self.clean_notch = None
         self.clean_svd = None
         self.process_file_path = None
+        self.worker = None
+        self.threadpool = QThreadPool()
+        self.filter_dialog = None
+        self.canceled = False
 
     def _init_layout(self):
         right_panel = QWidget()
@@ -44,6 +51,11 @@ class ProcessingWidget(QWidget):
         self.remover_options.update_filter(name)
         self.plot.update_filter(name)
         self.plot.update_config_button(self.remover_options.get_current_config())
+        processed = self.get_processed_channels()
+        if processed is not None:
+            self.display_options.display_processed_btn.setEnabled(True)
+        else:
+            self.display_options.display_processed_btn.setEnabled(False)
 
     def update_frame(self, frame_number):
         self.plot.update_frame(frame_number, update_time=True)
@@ -52,15 +64,28 @@ class ProcessingWidget(QWidget):
 
     def process(self, **kwargs):
         kwargs["batch_idxs"] = ensure_list(self.display_options.frame_number)
+        # self.remover_options.disable()
         self.parent.log_box.log("Processing data...")
+        # self.worker.set_kwargs(**kwargs)
+        # self.threadpool.start(self.worker)
         self.remover_options.remover.process(**kwargs)
         self.update_processed_plot(kwargs["batch_idxs"], kwargs["channel_idxs"])
         self.parent.log_box.log("Data processing done!")
-        self.parent.saved_ok = False
+        # self.remover_options.enable()
+        self.display_options.display_processed_btn.setEnabled(True)
+        self.parent.set_saved_ok(False)
 
-    def set_file(self, file_list, process_data_file=None):
+    def set_file(self, file_list, process_data_file=None, filtering_params=None):
+        if filtering_params is None:
+            self.filter_dialog = FilterDialog(self)
+            if self.filter_dialog.exec_() == 0:
+                self.canceled = True
+                return
+            else:
+                self.canceled = False
+                filtering_params = self.filter_dialog.get_filter_params()
         self.file_path = file_list
-        self.remover_options.set_file(file_list)
+        self.remover_options.set_file(file_list, **filtering_params)
         if self.remover_options.remover is None:
             self.file_path = None
             return
@@ -70,19 +95,21 @@ class ProcessingWidget(QWidget):
         # data_resampled = self._resample_data(self.remover_options.get_all_data(), self.remover_options.get_rate())
         # self.remover_options.remover.data_loader.init_data = data_resampled
         # self.remover_options.remover.data_loader.data_rate = 2000
+        self.display_options.set_file_params(
+            self.remover_options.get_channels(), self.remover_options.get_all_data().shape[0]
+        )
         self.plot.initialize_data(
             self.remover_options.get_all_data(),
             self.remover_options.get_channels(),
             self.remover_options.remover.data_loader.time,
             cleaned_notch=clean_notch,
-            cleaned_svd=clean_svd
+            cleaned_svd=clean_svd,
         )
-        self.display_options.set_file_params(
-            self.remover_options.get_channels(), self.remover_options.get_all_data().shape[0]
-        )
+        self.parent.toolbar.enable_filter_menu()
         self.parent.toolbar.radio_svd_filter_button.setEnabled(True)
         self.parent.toolbar.radio_notch_filter_button.setEnabled(False)
         self.update_filter("notch")
+        # self.worker = Worker(self.remover_options.remover.process)
 
     def _resample_data(self, data, rate, target=2000):
         if rate != target:
@@ -110,14 +137,18 @@ class ProcessingWidget(QWidget):
             "rate": self.remover_options.get_rate(),
         }
         sio.savemat(path, dic_to_save)
-        self.parent.saved_ok = True
+        export_csv(path, **dic_to_save)
+        self.parent.log_box.log(
+            "To use the processed file in signal you can import the txt file saved at " + path.replace(".mat", ".txt")
+        )
+        self.parent.set_saved_ok(True)
 
     def load_config(self, path):
         if path == "":
             return
         with open(path, "r") as f:
             config_data = json.load(f)
-        self.set_file(config_data["file_path"], config_data["process_file_path"])
+        self.set_file(config_data["file_path"], config_data["process_file_path"], config_data["preprocessing_params"])
         self.remover_options.svd_options.load_config(config_data["filters_params_svd"])
         self.remover_options.notch_options.load_config(config_data["filters_params_notch"])
 
@@ -144,7 +175,7 @@ class ProcessingWidget(QWidget):
 
     def popup_info(self, config):
         text = ""
-        if config is None: 
+        if config is None:
             return
         for name, value in config.items():
             text += name + ": " + str(value) + "\n"
@@ -155,3 +186,6 @@ class ProcessingWidget(QWidget):
 
     def update_mouse_pos(self, pos):
         self.display_options.update_mouse_pos(pos)
+
+    def get_processed_channels(self):
+        return self.remover_options.get_processed_channels()

@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
 )
 from PyQt5.QtCore import Qt
-from .gui_utils import ChannelSelecter
+from .gui_utils import ChannelSelecter, check_list
 
 
 class OptionWidget(QWidget):
@@ -21,15 +21,15 @@ class OptionWidget(QWidget):
         self.channel_selecter = None
         self.parent = parent
         self.current_frame = 0
-        self.process_window = 5000 if self.type != "notch" else 10000
         self.channels = []
         self.init_process_args = {
             "notch_filter": self.type == "notch",
             "quality_factor": 80,
             "frequency_peaks": 30,
+            "first_peak": 30,
             "hankel_size": 500,
             "hankel_delay": 1,
-            "process_window": self.process_window,
+            "process_window": 10000,
             "factor": 0.5,
             "freq_bounds": [10, 500],
             "channel_idxs": None,
@@ -44,16 +44,28 @@ class OptionWidget(QWidget):
         self.popup_button = QPushButton("Select channels to process")
         self.popup_button.clicked.connect(self.on_popup_button_clicked)
 
-        self.input_wind = QLineEdit()
-        self.input_wind.setText(str(self.process_window))
-        self.input_wind.textChanged.connect(self.set_process_window)
+        self.process_shown_button = QPushButton("Select channels to process")
+        self.process_shown_button.clicked.connect(self.on_process_shown_button)
+
         self.cancel_button = QPushButton("Cancel processing")
         self.cancel_button.clicked.connect(self.on_cancel_button_clicked)
+
+        # self.wind_to_proc_label = QLabel('Chose which part of the data to process.\n' \
+        # '1) If nothing is writen it will process the whole data.' \
+        # '2) If you want to process only a part of the data, you can write the start and end frame separated by a commainside brackets (e.g. [200, 1200]).\n' \
+        # 'You can put as many brackets you want to process different parts of the data, if brackets overlap (e.g. [200, 400], [500, 700], ...).\n' \
+        # '3) If you want to process repetitive parts of the data you can write the delay between the start of the windows (in ms), the first frame of the first windows and the windows lenght (e.g. [20, 0, 1000]).\n' \
+        # 'The windows will be stack to be process all together by the same parameters.')
+        # self.window_to_process_input = QLabel()
+        # self.window_to_process_input.textChanged.connect(self.update_data_windows)
+
 
     def init(self, channels, frames):
         self.channels = channels
         self.n_frames = frames
         self.channel_selecter = ChannelSelecter(self, self.channels, for_display=False)
+        if self.type == 'svd':
+            self.set_automatic_hsize(Qt.Checked)
 
     def get_options(self):
         return self.__dict__
@@ -64,6 +76,11 @@ class OptionWidget(QWidget):
 
     def get_option(self, option):
         return getattr(self, option)
+    
+    def on_process_shown_button(self):
+        channels = self.parent.get_displayed_channels()
+        self.channel_selecter.set_channels(channels)
+        self.on_draw_clicked()
 
     def on_popup_button_clicked(self):
         if self.channel_selecter is None:
@@ -129,19 +146,29 @@ class OptionWidget(QWidget):
         for item in self.findChildren(QWidget):
             item.setEnabled(True)
         self.process_button.setEnabled(False)
+        if self.type == 'svd':
+            self.input_hankel.setEnabled(not self.automatic_hsize)
+
+    # def update_data_windows(self, text):
+    #     windows = check_list(text)
+
 
 
 class NotchOptions(OptionWidget):
     def __init__(self, parent=None):
         super().__init__("notch", parent)
+        self.process_window = 10000
         self.quality_factor = 80
         self.frequency_peaks = 30
         self.params_changed = True
+        self.first_peak = ''
+        self.init_process_args['process_window'] = self.process_window
         self._init_layout()
         self.short_process_args = {
             "quality_factor": 80,
             "frequency_peaks": 30,
             "process_window": self.process_window,
+            "first_peak": 30,
         }
 
     def _init_layout(self):
@@ -153,18 +180,28 @@ class NotchOptions(OptionWidget):
         self.input_quality.textChanged.connect(self.set_quality_factor)
         layout.addWidget(self.input_quality, 1, 1, 1, 1)
 
-        layout.addWidget(QLabel("Frequency Peaks:"), 2, 0, 1, 1)
+        layout.addWidget(QLabel("Stimulation frequency:"), 2, 0, 1, 1)
         self.input_freq = QLineEdit()
         self.input_freq.setText(str(self.frequency_peaks))
         self.input_freq.textChanged.connect(self.set_frequency_peaks)
         layout.addWidget(self.input_freq, 2, 1, 1, 1)
 
-        layout.addWidget(QLabel("Process window lenght:"), 3, 0, 1, 1)
+        layout.addWidget(QLabel("First peak frequency:"), 3, 0, 1, 1)
+        self.input_first = QLineEdit()
+        self.input_first.setText(str(self.first_peak))
+        self.input_first.textChanged.connect(self.set_first_peak)
+        layout.addWidget(self.input_first, 3, 1, 1, 1)
 
-        layout.addWidget(self.input_wind, 3, 1, 1, 2)
-
-        layout.addWidget(self.popup_button, 4, 0, 1, 2)
-        layout.addWidget(self.process_button, 5, 0, 1, 2)
+        self.input_wind = QLineEdit()
+        self.input_wind.setText(str(self.process_window))
+        self.input_wind.textChanged.connect(self.set_process_window)
+        layout.addWidget(QLabel("Process window lenght:"), 4, 0, 1, 1)
+        layout.addWidget(self.input_wind, 5, 1, 1, 2)
+        # layout.addWidget(self.wind_to_proc_label, 6, 0, 1, 2)
+        # layout.addWidget(self.window_to_process_input, 6, 0, 1, 2)
+        layout.addWidget(self.popup_button, 6, 0, 1, 2)
+        # layout.addWidget(self.process_shown_button, 5, 1, 1, 1)
+        layout.addWidget(self.process_button, 7, 0, 1, 2)
         layout.setAlignment(Qt.AlignTop)
         self.setLayout(layout)
 
@@ -178,6 +215,11 @@ class NotchOptions(OptionWidget):
             return
         self.frequency_peaks = float(text)
 
+    def set_first_peak(self, text):
+        if text == "":
+            return
+        self.first_peak = float(text)
+
     def set_process_window(self, text):
         if text == "":
             return
@@ -189,12 +231,13 @@ class SVDOptions(OptionWidget):
         super().__init__("svd", parent)
         self.hankel_delay = 1
         self._hankel_size = 500
-        self.process_window = 1000
+        self.process_window = 5000
         self.overlap = 0
         self.nb_principal_components = None
         self.factor = 0.35
         self.freq_bounds = [10, 300]
         self.automatic_hsize = True
+        self.init_process_args['process_window'] = self.process_window
         self._init_layout()
         self.short_process_args = {
             "hankel_size": 500,
@@ -208,7 +251,10 @@ class SVDOptions(OptionWidget):
         layout = QGridLayout()
         layout.addWidget(QLabel("<b><font size=5>SVD Remover Options</font></b>"), 0, 0, 1, 3, Qt.AlignCenter)
         layout.addWidget(QLabel("Process window lenght:"), 1, 0, 1, 2)
-
+        
+        self.input_wind = QLineEdit()
+        self.input_wind.setText(str(self.process_window))
+        self.input_wind.textChanged.connect(self.set_process_window)
         layout.addWidget(self.input_wind, 1, 1, 1, 1)
 
         layout.addWidget(QLabel("Hankel size:"), 2, 0, 1, 1)
@@ -239,6 +285,8 @@ class SVDOptions(OptionWidget):
         self.input_high_freq.textChanged.connect(self.set_high_freq)
         layout.addWidget(self.input_high_freq, 4, 2, 1, 1)
 
+        # layout.addWidget(self.wind_to_proc_label, 5, 0, 1, 2)
+        # layout.addWidget(self.window_to_process_input, 6, 0, 1, 2)
         layout.addWidget(self.popup_button, 5, 0, 1, 3)
         layout.addWidget(self.process_button, 6, 0, 1, 3)
         layout.setAlignment(Qt.AlignTop)
@@ -276,10 +324,9 @@ class SVDOptions(OptionWidget):
         self.input_hankel.setEnabled(not self.automatic_hsize)
         self.input_hankel.setText(str(self.hankel_size_from_window()))
 
-    def hankel_size_from_window(self, factor=8):
-        if int((self.process_window / factor) / self.hankel_delay) < 500:
-            return 500
-        return int((self.process_window / factor) / self.hankel_delay)
+    def hankel_size_from_window(self, factor=10):
+        self.process_window = int(self.input_wind.text())
+        return max(int((self.process_window / factor) / self.hankel_delay), 100)
 
     @property
     def hankel_size(self):
@@ -334,10 +381,12 @@ class Remover:
         time = np.linspace(0, int(epochs * window)/rate, int(epochs * window))
         self.remover.data_loader.time = time.reshape((epochs, window))
         
-    def set_file(self, file_path, signal_filter=True, center=True, cutoff=[10, 450]):
+    def set_file(self, file_path, signal_filter=False, center=True, cutoff=[10, 450], order=2):
         self.process_widgets.setCurrentIndex(0)
         self.current_filter = "notch"
-        self._init_remover(file_path, signal_filter=signal_filter, center=center, cutoff=cutoff)
+        # for options in [self.notch_options, self.svd_options]:
+        #     options.__init__(self.parent)
+        self._init_remover(file_path, signal_filter=signal_filter, center=center, cutoff=cutoff, order=order)
         self.enable()
 
     def get_all_data(self):
@@ -379,3 +428,12 @@ class Remover:
     def enable(self):
         self.svd_options.enable()
         self.notch_options.enable()
+    
+    def get_processed_channels(self):
+        config = self.get_current_config()
+        if config is None:
+            return
+        return [i for i, conf in enumerate(config) if conf is not None]
+
+    def get_displayed_channels(self):
+        return self.parent.display_options.channel_selecter.get_channel_idxs()

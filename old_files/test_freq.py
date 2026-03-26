@@ -1,2 +1,0 @@
-from artifact_remover.automatic_remover import ArtefactRemover
-

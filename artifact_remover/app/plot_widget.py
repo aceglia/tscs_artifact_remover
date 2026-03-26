@@ -172,7 +172,7 @@ class Plotter(pg.GraphicsLayoutWidget):
 
     def initialize_data(self, data, channels, time, cleaned_notch=None, cleaned_svd=None):
         self.channels = channels
-        self.visible_channels = channels
+        self.visible_channels = self.parent.display_options.channel_selecter.get_channel_names()
         self.raw_data = data
         self.clean_notch = data.copy() if cleaned_notch is None else cleaned_notch
         self.clean_svd = data.copy() if cleaned_svd is None else cleaned_svd

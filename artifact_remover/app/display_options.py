@@ -28,8 +28,15 @@ class DisplayWidget(QWidget):
         self.input_frame = QLineEdit()
         self.input_frame.setText("1")
         self.input_frame.textChanged.connect(self.on_frame_changed)
-        self.popup_button = QPushButton("Select channels to display")
+        self.popup_button = QPushButton("Select channels to show")
         self.popup_button.clicked.connect(self.on_popup_button_clicked)
+
+        self.display_processed_btn = QPushButton("Show processed")
+        self.display_processed_btn.clicked.connect(self.on_display_processed)
+        self.display_processed_btn.setEnabled(False)
+
+        self.display_all_btn = QPushButton("Show all")
+        self.display_all_btn.clicked.connect(self.on_display_all)
 
         self.draw_raw_button = QCheckBox("Raw")
         self.draw_raw_button.setChecked(True)
@@ -45,7 +52,9 @@ class DisplayWidget(QWidget):
         layout.addWidget(self.prev_frame, 3, 1, 1, 1)
         layout.addWidget(self.next_frame, 3, 2, 1, 1)
         layout.addWidget(self.input_frame, 3, 3, 1, 1)
-        layout.addWidget(self.popup_button, 4, 0, 1, 4)
+        layout.addWidget(self.display_processed_btn, 4, 3, 1, 1)
+        layout.addWidget(self.display_all_btn, 4, 2, 1, 1)
+        layout.addWidget(self.popup_button, 4, 0, 1, 2)
         layout.addWidget(self.draw_raw_button, 5, 0, 1, 1)
         layout.addWidget(self.draw_clean_button, 5, 1, 1, 1)
         layout.addWidget(self.show_fft_button, 5, 2, 1, 1)
@@ -69,11 +78,26 @@ class DisplayWidget(QWidget):
             self._update_frame_number(value=text)
         self.input_frame.setText(str(self.frame_number + 1))
         self.parent.update_frame(self.frame_number)
+        processed = self.parent.get_processed_channels()
+        if processed is not None:
+            self.display_processed_btn.setEnabled(True)
+        else:
+            self.display_processed_btn.setEnabled(False)
 
     def on_popup_button_clicked(self):
         if self.channel_selecter is None:
             self.channel_selecter = ChannelSelecter(self, self.channels)
         self.channel_selecter.show()
+
+    def on_display_processed(self):
+        channels = self.parent.get_processed_channels()
+        self.channel_selecter.set_channels(channels)
+        self.on_draw_clicked()
+
+    def on_display_all(self):
+        channels = list(range(len(self.channels)))
+        self.channel_selecter.set_channels(channels)
+        self.on_draw_clicked()
 
     def on_draw_clicked(self):
         self.channels_to_draw = self.channel_selecter.get_selected_channels()
@@ -94,7 +118,15 @@ class DisplayWidget(QWidget):
         self.channels = channels
         self.n_frames = n_frames
         self.channel_selecter = ChannelSelecter(self, self.channels)
+        self._reset()
         self.enable()
+
+    def _reset(self):
+        self._update_frame_number('1')
+        self.draw_raw_button.setChecked(True)
+        self.draw_clean_button.setChecked(True)
+        self.show_fft_button.setChecked(False)
+        self.update_draw_params()
 
     def on_draw_raw_clicked(self):
         self.draw_raw = self.draw_raw_button.isChecked()
@@ -121,6 +153,7 @@ class DisplayWidget(QWidget):
     def enable(self):
         for item in self.findChildren(QWidget):
             item.setEnabled(True)
+        self.display_processed_btn.setEnabled(False)
         
 
 
