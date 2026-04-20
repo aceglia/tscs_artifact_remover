@@ -16,7 +16,7 @@ class LoadDialog:
             )
             if self.filename is None or self.filename == "":
                 return
-            parent.log_box.log(f'Loading file {self.filename}...')
+            parent.log_box.log(f"Loading file {self.filename}...")
             parent.cache.set_to_cache("last_dir", os.path.dirname(self.filename))
             if load_method is not None:
                 load_method(self.filename)

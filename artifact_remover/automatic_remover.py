@@ -1,5 +1,5 @@
-from typing import Union, List
 import multiprocessing as mp
+from typing import Union
 
 import numpy as np
 import scipy
@@ -15,7 +15,21 @@ from artifact_remover.processing_utils import filter_data, merge_dict
 
 
 class ArtefactRemover:
-    def __init__(self, data: Union[str, List[str]] = None, **data_loader_kwargs):
+    def __init__(self, data: str = None, **data_loader_kwargs):
+        """
+        Initialize the ArtefactRemover object.
+
+        Parameters
+        ------------
+        data : str, optional
+            Path to the data file to load.
+        data_loader_kwargs : dict
+            Additional keyword arguments for the DataLoader.
+
+        Returns
+        --------
+        None
+        """
         self.ratio = None
         self.transformer = None
         self.is_txt_file = False
@@ -25,31 +39,92 @@ class ArtefactRemover:
         if data is not None:
             self.load_data(data, data_loader_kwargs)
 
-    def load_data(self, data, data_loader_kwargs):
+    def load_data(self, data: str, data_loader_kwargs: dict):
+        """
+        Load data using the DataLoader.
+
+        Parameters
+        ------------
+        data : str
+            Path to the data file.
+        data_loader_kwargs : dict
+            Additional keyword arguments for the DataLoader.
+
+        Returns
+        --------
+        None
+        """
         self.data_loader = DataLoader(data, **data_loader_kwargs)
         self.is_data_loaded = True
 
     def process(
         self,
-        hankel_size=300,
-        threshold=None,
-        randomized=False,
-        post_filter=False,
-        threads=1,
-        batch_idxs=None,
-        channel_idxs=None,
-        data_window=None,
-        nb_principal_components=None,
-        epsilon=None,
-        notch_filter=False,
-        quality_factor=150,
-        frequency_peaks=30,
-        first_peak=None,
-        hankel_delay=1,
-        process_window=None,
-        freq_bounds=[10, 450],
-        factor=0.5,
+        hankel_size: int = 300,
+        threshold: float = None,
+        randomized: bool = False,
+        post_filter: bool = False,
+        threads: int = 1,
+        batch_idxs: Union[list, int] = None,
+        channel_idxs: Union[list, int] = None,
+        data_window: list = None,
+        nb_principal_components: int = None,
+        epsilon: float = None,
+        notch_filter: bool = False,
+        quality_factor: int = 150,
+        frequency_peaks: float = 30,
+        first_peak: float = None,
+        hankel_delay: int = 1,
+        process_window: int = None,
+        freq_bounds: list = [10, 450],
+        factor: float = 0.5,
     ) -> Solution:
+        """
+        Main processing function to remove artifacts from signals.
+
+        Parameters
+        ------------
+        hankel_size : int
+            The numebr of lines of the Hankel matrix.
+        threshold : float, optional
+            Threshold for singular value filtering.
+        randomized : bool
+            Whether to use randomized SVD.
+        post_filter : bool
+            Apply filtering after processing.
+        threads : int
+            Number of parallel processes.
+        batch_idxs : int or list, optional
+            Batch indices to process.
+        channel_idxs : int or list, optional
+            Channel indices to process.
+        data_window : list, optional
+            Time window [start, end] for data selection.
+        nb_principal_components : int, optional
+            Number of principal components to retain.
+        epsilon : float, optional
+            Threshold for SVD truncation.
+        notch_filter : bool
+            Use notch filtering instead of decomposition.
+        quality_factor : float
+            Quality factor for notch filter.
+        frequency_peaks : float
+            Frequency of stimulation artifacts.
+        first_peak : float, optional
+            First peak frequency.
+        hankel_delay : int
+            Delay used in Hankel construction.
+        process_window : int, optional
+            Window size for processing.
+        freq_bounds : list
+            Frequency bounds for filtering.
+        factor : float
+            Scaling factor for singular values.
+
+        Returns
+        --------
+        Solution
+            Processed solution object.
+        """
         self.solution = Solution(self.data_loader.data_rate)
         print("Processing signals, this might take a while...")
         data = self.data_loader.init_data
@@ -72,6 +147,7 @@ class ArtefactRemover:
         data_rate = self.data_loader.data_rate
         list_results = []
         fft_freqs = np.fft.rfftfreq(process_window - (hankel_size - 1) * hankel_delay, 1 / data_rate)
+
         if threads == 1:
             for d in range(data.shape[0]):
                 list_results.append(
@@ -92,10 +168,9 @@ class ArtefactRemover:
                         freq_bounds=freq_bounds,
                         factor=factor,
                         fft_freqs=fft_freqs,
-                        notch=notch_filter,
+                        notch_filter=notch_filter,
                     )
                 )
-
         else:
             args = [
                 (
@@ -119,12 +194,26 @@ class ArtefactRemover:
             ctx = mp.get_context("spawn")
             with ctx.Pool(processes=threads) as pool:
                 list_results = pool.map(self.worker, args)
+
         fct = self.solution.from_notch_filter if notch_filter else self.solution.from_signal_decomposition
         fct(list_results, initial_data_shape=self.data_loader._data_shape)
         return self.solution
 
     @staticmethod
-    def worker(args):
+    def worker(args: tuple) -> dict | np.ndarray:
+        """
+        Worker function for multiprocessing.
+
+        Parameters
+        ------------
+        args : tuple
+            Arguments required for processing.
+
+        Returns
+        --------
+        dict
+            Result dictionary from processing.
+        """
         (
             data,
             hankel_size,
@@ -143,6 +232,7 @@ class ArtefactRemover:
             factor,
             fft_freqs,
         ) = args
+
         return ArtefactRemover().perform_window_process(
             frequency_peaks=frequency_peaks,
             data=data,
@@ -163,18 +253,43 @@ class ArtefactRemover:
             freq_bounds=freq_bounds,
             factor=factor,
             fft_freqs=fft_freqs,
-            notch=notch_filter,
+            notch_filter=notch_filter,
         )
 
     @staticmethod
-    def perform_window_process(data, return_dict=True, window=10000, notch=False, **kwargs):
-        fct = ArtefactRemover()._perform_notch_filter if notch else ArtefactRemover()._perform_decomposition
+    def perform_window_process(
+        data, return_dict: bool = True, window: int = 10000, notch_filter: bool = False, **kwargs
+    ) -> dict | np.ndarray:
+        """
+        Process data in sliding windows.
+
+        Parameters
+        ------------
+        data : ndarray
+            Input signal.
+        return_dict : bool
+            Return results as dictionary.
+        window : int
+            Window size.
+        notch_filter : bool
+            Use notch filtering.
+        **kwargs: kwargs
+            Additional arguments for processing
+
+        Returns
+        --------
+        dict or ndarray
+            Processed result.
+        """
+        fct = ArtefactRemover()._perform_notch_filter if notch_filter else ArtefactRemover()._perform_decomposition
         if return_dict:
             init_data = data.copy()
+
         count = 0
         len_d = len(data)
         break_at_end = False
         res = None
+
         while True:
             overlap = 0
             if count != 0:
@@ -187,7 +302,14 @@ class ArtefactRemover:
                     data_tmp = data[count : count + window]
             else:
                 data_tmp = data[count : count + window]
-            res_tmp = fct(data=data_tmp, **kwargs)
+
+            res_tmp = fct(data=data_tmp, return_dict=return_dict, **kwargs)
+            if notch_filter:
+                res_tmp, a_list, b_list = res_tmp
+                # kwargs.update({'b_list': b_list, 'a_list': a_list})
+            else:
+                res_tmp, rejected_idx = res_tmp
+                # kwargs.update({'rejected_idx': rejected_idx})
             if return_dict:
                 if overlap != 0:
                     res_tmp["output"] = res_tmp["output"][overlap:]
@@ -199,38 +321,55 @@ class ArtefactRemover:
             if break_at_end or count >= len_d:
                 break
 
-        sig_to_filt = res if not return_dict else res["output"].copy()
-        if filter:
-            signal_filtered = filter_data(sig_to_filt[None, None, :])[0, 0, :]
-            if return_dict:
-                res["output"] = signal_filtered
         if return_dict:
             res["data"] = init_data
-            res["unfiltered_signal"] = sig_to_filt
         return res
 
     @staticmethod
     def _perform_decomposition(
-        data,
-        hankel_size=None,
-        randomized=False,
-        filter=True,
-        nb_principal_components=None,
-        n_reconstruct=None,
-        epsilon=None,
-        offline=True,
-        hankel_delay=1,
-        return_dict=True,
-        data_rate=None,
-        freq_bounds=[10, 450],
-        factor=0.5,
-        fft_freqs=None,
+        data: np.ndarray,
+        hankel_size: int = None,
+        randomized: bool = False,
+        filter: bool = False,
+        nb_principal_components: int = None,
+        n_reconstruct: int = None,
+        epsilon: float = None,
+        offline: bool = True,
+        hankel_delay: int = 1,
+        return_dict: bool = True,
+        data_rate: float = None,
+        freq_bounds: list = [10, 450],
+        factor: float = 0.5,
+        fft_freqs: scipy.fft.rfftfreq = None,
+        rejected_idx=None,
         **kwargs
     ):
+        """
+        Perform SVD-based signal decomposition and artifact removal.
+
+        Parameters
+        ------------
+        data : ndarray
+            Input signal.
+        hankel_size : int
+            Number of rows in Hankel matrix.
+        randomized : bool
+            Use randomized SVD.
+        filter : bool
+            Apply post-filtering.
+        nb_principal_components : int
+            Number of principal components.
+        epsilon : float
+            Threshold for singular values.
+
+        Returns
+        --------
+        dict or ndarray
+            Processed signal or detailed results.
+        """
         if return_dict:
-            out_dict = {
-                "data": data,
-            }
+            out_dict = {"data": data}
+
         u, s, v, hankel_matrix = compute_svd(
             data,
             n_rows=hankel_size,
@@ -243,42 +382,91 @@ class ArtefactRemover:
 
         if return_dict:
             out_dict.update({"s": s.copy()})
-        # rem_fct = remove_singular_values_offline if offline else remove_singular_values
-        s_reduced, v, u = remove_singular_values(
-            v, s, u, data_rate=data_rate, freq_bounds=freq_bounds, factor=factor, fft_freqs=fft_freqs
-        )
 
-        if n_reconstruct is not None:
-            signal_reduced = get_signal_from_hankel(u @ (v[:, -n_reconstruct:] * s_reduced[:, None]), hankel_delay)
-        else:
-            signal_reduced = get_signal_from_hankel(u @ (v * s_reduced[:, None]), hankel_delay)
+        s_reduced, v, u, rejected_idx = remove_singular_values(
+            v, s, u, data_rate=data_rate, freq_bounds=freq_bounds, factor=factor, fft_freqs=fft_freqs, rejected_idx=rejected_idx
+        )
+        # if n_reconstruct is not None:
+        #     signal_reduced = get_signal_from_hankel(u @ (v[:, -n_reconstruct:] * s_reduced[:, None]), hankel_delay)
+        # else:
+        signal_reduced = get_signal_from_hankel((u * s_reduced) @ v, hankel_delay)
+
+
         if return_dict:
             out_dict["unfiltered_signal"] = signal_reduced.copy()
+
         if filter:
             signal_reduced = filter_data(signal_reduced[None, None, :])[0, 0, :]
+
         if return_dict:
             out_dict["output"] = signal_reduced
             out_dict["u"] = u
             out_dict["v"] = v
             out_dict["s_reduced"] = s_reduced
-            return out_dict
+            out_dict["rejected_idx"] = rejected_idx
+            return (out_dict, rejected_idx)
         else:
-            return signal_reduced
+            return (signal_reduced, rejected_idx)
 
     @staticmethod
     def _perform_notch_filter(
-        frequency_peaks, data, fs=2000, quality_factor=150, return_dict=True, first_peak=None, **kwargs
+        frequency_peaks: float,
+        data: np.ndarray,
+        fs: float = 2000,
+        quality_factor: int = 150,
+        return_dict: bool = True,
+        first_peak: float = None,
+        offline=True,
+        b_list=None, 
+        a_list=None,
+        **kwargs
     ):
+        """
+        Apply notch filters at harmonic frequencies.
+
+        Parameters
+        ------------
+        frequency_peaks : float
+            Base frequency of artifacts.
+        data : ndarray
+            Input signal.
+        fs : float
+            Sampling frequency.
+        quality_factor : float
+            Quality factor of notch filters.
+        first_peak: float
+            The first frequency peak corresponding to the artifacts, needed if not the same than frequency peaks.
+
+        Returns
+        --------
+        dict or ndarray
+            Filtered signal.
+        """
         if return_dict:
             out_dict = {"data": data.copy()}
+
         first_peak = frequency_peaks if first_peak is None else first_peak
         harmonics = [i * frequency_peaks + first_peak for i in range(0, int((fs / 2) / frequency_peaks) + 1)]
+        if b_list is None or a_list is None:
+            b_list, a_list = [], []
+            recompute_filters = True
         for p, ha in enumerate(harmonics):
             try:
-                b, a = scipy.signal.iirnotch(ha, quality_factor, fs=fs)
-                filtered_signal = (
-                    scipy.signal.filtfilt(b, a, data) if p == 0 else scipy.signal.filtfilt(b, a, filtered_signal)
-                )
+                if recompute_filters:
+                    b, a = scipy.signal.iirnotch(ha, quality_factor, fs=fs)
+                    b_list.append(b)
+                    a_list.append(a)
+                else:
+                    b, a = b_list[p], a_list[p]
+
+                if offline:
+                    filtered_signal = (
+                        scipy.signal.filtfilt(b, a, data) if p == 0 else scipy.signal.filtfilt(b, a, filtered_signal)
+                    )
+                else:
+                    filtered_signal = (
+                        scipy.signal.lfilter(b, a, data) if p == 0 else scipy.signal.lfilter(b, a, filtered_signal)
+                    )
             except:
                 continue
 
@@ -293,21 +481,83 @@ class ArtefactRemover:
                     "s_reduced": None,
                 }
             )
-            return out_dict
+            return (out_dict, b_list, a_list)
         else:
-            return filtered_signal
+            return (filtered_signal, b_list, a_list)
 
     def get_process_signal(self, filtered=True):
+        """
+        Retrieve processed signal.
+
+        Parameters
+        ------------
+        filtered : bool
+            Return filtered or unfiltered signal.
+
+        Returns
+        --------
+        ndarray
+            Requested signal.
+        """
         return self.solution.get("signal_reduced") if filtered else self.solution.get("unfiltered_signal")
 
     def get_init_signal(self):
+        """
+        Retrieve initial raw signal.
+
+        Parameters
+        ------------
+        None
+
+        Returns
+        --------
+        ndarray
+            Initial data.
+        """
         return self.data_loader.init_data
 
     def get_singular_values(self, processed=False):
+        """
+        Retrieve singular values.
+
+        Parameters
+        ------------
+        processed : bool
+            Return processed or original singular values.
+
+        Returns
+        --------
+        ndarray
+            Singular values.
+        """
         return self.solution.get(["s"]) if not processed else self.solution.get(["s_reduced"])
 
     def get_data_rate(self):
+        """
+        Retrieve data sampling rate.
+
+        Parameters
+        ------------
+        None
+
+        Returns
+        --------
+        float
+            Sampling frequency.
+        """
         return self.data_loader.data_rate
 
     def get_channel_names(self):
+        """
+        Retrieve channel names.
+
+        Parameters
+        ------------
+        None
+
+        Returns
+        --------
+        list
+            Channel names.
+        """
         return self.data_loader.channel_names

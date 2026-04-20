@@ -1,6 +1,4 @@
 import numpy as np
-
-from ..automatic_remover import ArtefactRemover
 from PyQt5.QtWidgets import (
     QWidget,
     QStackedWidget,
@@ -9,9 +7,14 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QPushButton,
     QCheckBox,
+    QPlainTextEdit,
+    QMessageBox,
 )
 from PyQt5.QtCore import Qt
-from .gui_utils import ChannelSelecter, check_list
+
+from ..automatic_remover import ArtefactRemover
+from ..rt_automatic_remover import RtArtefactRemover
+from .gui_utils import ChannelSelecter, ensure_list
 
 
 class OptionWidget(QWidget):
@@ -26,7 +29,7 @@ class OptionWidget(QWidget):
             "notch_filter": self.type == "notch",
             "quality_factor": 80,
             "frequency_peaks": 30,
-            "first_peak": 30,
+            "first_peak": None,
             "hankel_size": 500,
             "hankel_delay": 1,
             "process_window": 10000,
@@ -50,6 +53,10 @@ class OptionWidget(QWidget):
         self.cancel_button = QPushButton("Cancel processing")
         self.cancel_button.clicked.connect(self.on_cancel_button_clicked)
 
+        self.text_config = QPlainTextEdit()
+        self.text_config.setReadOnly(True)
+        self.text_config.setStyleSheet("background-color: transparent;border: 0;")
+
         # self.wind_to_proc_label = QLabel('Chose which part of the data to process.\n' \
         # '1) If nothing is writen it will process the whole data.' \
         # '2) If you want to process only a part of the data, you can write the start and end frame separated by a commainside brackets (e.g. [200, 1200]).\n' \
@@ -59,12 +66,11 @@ class OptionWidget(QWidget):
         # self.window_to_process_input = QLabel()
         # self.window_to_process_input.textChanged.connect(self.update_data_windows)
 
-
     def init(self, channels, frames):
         self.channels = channels
         self.n_frames = frames
-        self.channel_selecter = ChannelSelecter(self, self.channels, for_display=False)
-        if self.type == 'svd':
+        # self.channel_selecter = ChannelSelecter(self, self.channels, for_display=False)
+        if self.type == "svd":
             self.set_automatic_hsize(Qt.Checked)
 
     def get_options(self):
@@ -76,7 +82,7 @@ class OptionWidget(QWidget):
 
     def get_option(self, option):
         return getattr(self, option)
-    
+
     def on_process_shown_button(self):
         channels = self.parent.get_displayed_channels()
         self.channel_selecter.set_channels(channels)
@@ -88,12 +94,19 @@ class OptionWidget(QWidget):
         self.channel_selecter.show()
 
     def on_draw_clicked(self):
+        idxs = self.channel_selecter.get_channel_idxs()
+        if len(idxs) == 0:
+            QMessageBox.warning(None, "No channel selected", "Please select at least one channel to process.")
+            return
         self.channel_idxs = self.channel_selecter.get_channel_idxs()
         self.process_button.setEnabled(True)
         self.channel_selecter.quit()
 
     def update_params(self):
         process_arguments = self.get_process_arguments()
+        if len(ensure_list(process_arguments["channel_idxs"])) == 0:
+            self.parent.log_box.log("Unable to process data. Please select a channel to process first.")
+            self.process_button.setEnabled(False)
         self.parent.process(**process_arguments)
         list_empty = (
             [None] * len(self.channels)
@@ -101,13 +114,18 @@ class OptionWidget(QWidget):
             else self.process_arguments[f"Frame_{self.current_frame}"]
         )
         channel_names = self.channel_selecter.get_channel_names()
+        self.channel_idxs = self.channel_selecter.get_channel_idxs()
         for c, ch in enumerate(self.channel_idxs):
             process_arguments["channel_name"] = channel_names[c]
             list_empty[ch] = process_arguments.copy()
         self.process_arguments[f"Frame_{self.current_frame}"] = list_empty
 
-    def update_frame(self, frame_number):
+    def update_frame(self, frame_number = 0):
         self.current_frame = frame_number
+
+    @staticmethod
+    def _check_empty(value):
+        return None if value == "" else value
 
     def get_process_arguments(self, keys_item=None, value_item=None):
         args_item = self.init_process_args if keys_item is None else keys_item
@@ -117,7 +135,7 @@ class OptionWidget(QWidget):
             if name == "hankel_size" and self.type == "svd":
                 params_dict[name] = self.hankel_size
                 continue
-            params_dict[name] = dic_item.get(name, args_item[name])
+            params_dict[name] = self._check_empty(dic_item.get(name, args_item[name]))
         return params_dict
 
     def load_config(self, config):
@@ -129,7 +147,7 @@ class OptionWidget(QWidget):
     def get_args_by_idx(self, idx=None):
         if f"Frame_{self.current_frame}" not in self.process_arguments:
             return
-        if idx:
+        if idx is not None:
             process_argument = self.process_arguments[f"Frame_{self.current_frame}"][idx]
             return self.get_short_config(value_item=process_argument)
         else:
@@ -141,17 +159,19 @@ class OptionWidget(QWidget):
     def disable(self):
         for item in self.findChildren(QWidget):
             item.setEnabled(False)
-        
-    def enable(self):
+
+    def enable(self, all=False):
         for item in self.findChildren(QWidget):
             item.setEnabled(True)
-        self.process_button.setEnabled(False)
-        if self.type == 'svd':
+        if not all:
+            self.process_button.setEnabled(False)
+        if self.type == "svd":
             self.input_hankel.setEnabled(not self.automatic_hsize)
 
     # def update_data_windows(self, text):
     #     windows = check_list(text)
-
+    def show_config(self, text):
+        self.text_config.setPlainText(text)
 
 
 class NotchOptions(OptionWidget):
@@ -161,14 +181,14 @@ class NotchOptions(OptionWidget):
         self.quality_factor = 80
         self.frequency_peaks = 30
         self.params_changed = True
-        self.first_peak = ''
-        self.init_process_args['process_window'] = self.process_window
+        self.first_peak = ""
+        self.init_process_args["process_window"] = self.process_window
         self._init_layout()
         self.short_process_args = {
             "quality_factor": 80,
             "frequency_peaks": 30,
             "process_window": self.process_window,
-            "first_peak": 30,
+            "first_peak": None,
         }
 
     def _init_layout(self):
@@ -202,6 +222,7 @@ class NotchOptions(OptionWidget):
         layout.addWidget(self.popup_button, 6, 0, 1, 2)
         # layout.addWidget(self.process_shown_button, 5, 1, 1, 1)
         layout.addWidget(self.process_button, 7, 0, 1, 2)
+        layout.addWidget(self.text_config, 8, 0, 1, 2)
         layout.setAlignment(Qt.AlignTop)
         self.setLayout(layout)
 
@@ -237,7 +258,7 @@ class SVDOptions(OptionWidget):
         self.factor = 0.35
         self.freq_bounds = [10, 300]
         self.automatic_hsize = True
-        self.init_process_args['process_window'] = self.process_window
+        self.init_process_args["process_window"] = self.process_window
         self._init_layout()
         self.short_process_args = {
             "hankel_size": 500,
@@ -251,7 +272,7 @@ class SVDOptions(OptionWidget):
         layout = QGridLayout()
         layout.addWidget(QLabel("<b><font size=5>SVD Remover Options</font></b>"), 0, 0, 1, 3, Qt.AlignCenter)
         layout.addWidget(QLabel("Process window lenght:"), 1, 0, 1, 2)
-        
+
         self.input_wind = QLineEdit()
         self.input_wind.setText(str(self.process_window))
         self.input_wind.textChanged.connect(self.set_process_window)
@@ -268,27 +289,36 @@ class SVDOptions(OptionWidget):
         layout.addWidget(self.input_hankel, 2, 1, 1, 1)
         layout.addWidget(self.check_auto_size, 2, 2, 1, 1)
 
-        layout.addWidget(QLabel("Select threshold:"), 3, 0, 1, 2)
+        layout.addWidget(QLabel("Hankel delay:"), 3, 0, 1, 1)
+        self.input_delay = QLineEdit()
+        self.input_delay.setText(str(self.hankel_delay))
+        self.input_delay.textChanged.connect(self.set_hankel_delay)
+        layout.addWidget(self.input_delay, 3, 1, 1, 1)
+
+
+        layout.addWidget(QLabel("Select threshold:"), 4, 0, 1, 2)
         self.input_factor = QLineEdit()
         self.input_factor.setText(str(self.factor))
         self.input_factor.textChanged.connect(self.set_factor)
-        layout.addWidget(self.input_factor, 3, 1, 1, 1)
+        layout.addWidget(self.input_factor, 4, 1, 1, 1)
 
-        layout.addWidget(QLabel("Select frequency bounds:"), 4, 0, 1, 1)
+        layout.addWidget(QLabel("Select frequency bounds:"), 5, 0, 1, 1)
         self.input_low_freq = QLineEdit()
         self.input_low_freq.setText(str(self.freq_bounds[0]))
         self.input_low_freq.textChanged.connect(self.set_low_freq)
-        layout.addWidget(self.input_low_freq, 4, 1, 1, 1)
+        layout.addWidget(self.input_low_freq, 5, 1, 1, 1)
 
         self.input_high_freq = QLineEdit()
         self.input_high_freq.setText(str(self.freq_bounds[1]))
         self.input_high_freq.textChanged.connect(self.set_high_freq)
-        layout.addWidget(self.input_high_freq, 4, 2, 1, 1)
+        layout.addWidget(self.input_high_freq, 5, 2, 1, 1)
 
         # layout.addWidget(self.wind_to_proc_label, 5, 0, 1, 2)
         # layout.addWidget(self.window_to_process_input, 6, 0, 1, 2)
-        layout.addWidget(self.popup_button, 5, 0, 1, 3)
-        layout.addWidget(self.process_button, 6, 0, 1, 3)
+        layout.addWidget(self.popup_button, 6, 0, 1, 3)
+        layout.addWidget(self.process_button, 7, 0, 1, 3)
+        layout.addWidget(self.text_config, 8, 0, 1, 3)
+
         layout.setAlignment(Qt.AlignTop)
         self.setLayout(layout)
 
@@ -319,12 +349,19 @@ class SVDOptions(OptionWidget):
             return
         self.freq_bounds[1] = int(text)
 
+    def set_hankel_delay(self, text):
+        if text == "":
+            return
+        self.hankel_delay = int(text)
+        if self.automatic_hsize:
+            self.set_automatic_hsize(Qt.Checked)
+
     def set_automatic_hsize(self, state, update=True):
         self.automatic_hsize = state == Qt.Checked
         self.input_hankel.setEnabled(not self.automatic_hsize)
         self.input_hankel.setText(str(self.hankel_size_from_window()))
 
-    def hankel_size_from_window(self, factor=10):
+    def hankel_size_from_window(self, factor=8):
         self.process_window = int(self.input_wind.text())
         return max(int((self.process_window / factor) / self.hankel_delay), 100)
 
@@ -352,6 +389,47 @@ class Remover:
         self.current_filter = "notch"
         self.filter_list = ["notch", "svd"]
 
+    def update_filter(self, name):
+        self.current_filter = name
+        self.process_widgets.setCurrentIndex(self.filter_list.index(name))
+        filter = self.svd_options if self.current_filter == "svd" else self.notch_options
+        if filter.channel_selecter is None:
+            filter.process_button.setEnabled(False)
+
+    def get_current_config(self, idx=None):
+        filter = self.notch_options if self.current_filter == "notch" else self.svd_options
+        return filter.get_args_by_idx(idx)
+
+    def disable(self):
+        self.svd_options.disable()
+        self.notch_options.disable()
+
+    def enable(self, all=False):
+        self.svd_options.enable(all)
+        self.notch_options.enable(all)
+
+    def get_processed_channels(self):
+        config = self.get_current_config()
+        if config is None:
+            return
+        return [i for i, conf in enumerate(config) if conf is not None]
+
+    def get_displayed_channels(self):
+        return self.parent.display_options.channel_selecter.get_channel_idxs()
+
+    def show_config(self, text):
+        options = self.notch_options if self.current_filter == "notch" else self.svd_options
+        options.show_config(text)
+
+    def get_process_window(self):
+        filter = self.svd_options if self.current_filter == "svd" else self.notch_options
+        return filter.process_window
+
+
+class OfflineRemover(Remover):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
     def _init_remover(self, path_file, **kwargs):
         self.remover = ArtefactRemover(data=path_file, **kwargs)
         data_shape = self.remover.data_loader.init_data.shape
@@ -359,14 +437,14 @@ class Remover:
         if data_shape[-1] > window and data_shape[0] == 1:
             total_epochs = int(np.ceil(data_shape[-1] / 25000))
             rate = self.remover.data_loader.data_rate
-            epochs_duration = window * (1/rate)
+            epochs_duration = window * (1 / rate)
             self.parent.parent.show_split_windows(
                 f"The data has {data_shape[-1]} points per channel. This may slowdown the programm."
                 f"If you chose 'yes' your file will be splitted in {total_epochs} of {epochs_duration:.2f}s duration Frames. If the last frame is not full, it will be filled with 0."
             )
-        if self.parent.parent._split == '&Yes':
+        if self.parent.parent._split == "&Yes":
             self._split_data(window, total_epochs, rate)
-        elif self.parent.parent._split == 'Cancel':
+        elif self.parent.parent._split == "Cancel":
             self.remover = None
 
         for options in [self.notch_options, self.svd_options]:
@@ -375,12 +453,12 @@ class Remover:
     def _split_data(self, window, epochs, rate):
         data = np.swapaxes(self.remover.data_loader.init_data, 0, 1)
         full_mat = np.zeros((data.shape[0], 1, int(epochs * window)))
-        full_mat[..., :data.shape[-1]] = data
+        full_mat[..., : data.shape[-1]] = data
         full_mat = full_mat.reshape(data.shape[0], epochs, window)
         self.remover.data_loader.init_data = np.swapaxes(full_mat, 0, 1)
-        time = np.linspace(0, int(epochs * window)/rate, int(epochs * window))
+        time = np.linspace(0, int(epochs * window) / rate, int(epochs * window))
         self.remover.data_loader.time = time.reshape((epochs, window))
-        
+
     def set_file(self, file_path, signal_filter=False, center=True, cutoff=[10, 450], order=2):
         self.process_widgets.setCurrentIndex(0)
         self.current_filter = "notch"
@@ -398,8 +476,13 @@ class Remover:
     def get_channels(self):
         return self.remover.data_loader.channel_names
 
-    def get_data(self, epochs, channel):
-        pass
+    def get_data(self, epochs=None, channel=None):
+        data = self.remover.data_loader.init_data
+        if epochs is not None:
+            data = data[epochs, :, :]
+        if channel is not None:
+            data = data[:, channel, :]
+        return data
 
     def update_frame(self, frame_number):
         for option in [self.notch_options, self.svd_options]:
@@ -413,27 +496,30 @@ class Remover:
             data = data[:, channel, :]
         return data
 
-    def update_filter(self, name):
-        self.current_filter = name
-        self.process_widgets.setCurrentIndex(self.filter_list.index(name))
 
-    def get_current_config(self, idx=None):
-        filter = self.notch_options if self.current_filter == "notch" else self.svd_options
-        return filter.get_args_by_idx(idx)
-    
-    def disable(self):
-        self.svd_options.disable()
-        self.notch_options.disable()
+class StreamRemover(Remover):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._adjust_value_for_stream()
+        self.remover = None
+        self.processing_queue = None
+        
+    def _adjust_value_for_stream(self):
+        self.svd_options.init_process_args["process_window"] = 500
+        self.svd_options.init_process_args["hankel_size"] = 100
+        self.notch_options.init_process_args["process_window"] = 2000
+        self.svd_options.input_hankel.setText(str(self.svd_options.init_process_args["hankel_size"]))
+        self.svd_options.input_wind.setText(str(self.svd_options.init_process_args["process_window"]))
+        self.notch_options.input_wind.setText(str(self.notch_options.init_process_args["process_window"]))
 
-    def enable(self):
-        self.svd_options.enable()
-        self.notch_options.enable()
-    
-    def get_processed_channels(self):
-        config = self.get_current_config()
-        if config is None:
-            return
-        return [i for i, conf in enumerate(config) if conf is not None]
-
-    def get_displayed_channels(self):
-        return self.parent.display_options.channel_selecter.get_channel_idxs()
+    def new_stream(self, queues=None):
+        self.process_widgets.setCurrentIndex(0)
+        self.current_filter = "notch"
+        self.processing_args = queues
+        [self.processing_args.put_nowait(self.get_current_config()) for _ in range(len(self.processing_args))]
+        self.remover = RtArtefactRemover()
+        self.enable()
+        
+    def get_process_arguments(self):
+        filter = self.svd_options if self.current_filter == "svd" else self.notch_options
+        return filter.get_process_arguments()

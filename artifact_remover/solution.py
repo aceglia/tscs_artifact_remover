@@ -7,9 +7,18 @@ from artifact_remover.analysis import Analysis
 
 
 class Solution:
-    def __init__(self, data_rate=None):
+    """
+    Solution object to store the decomposition output and provide methods to plot and analyse it.
+    """
+    def __init__(self, data_rate: float=None):
+        """
+        Initialize the Solution object.
+        Parameters:
+        -----------
+        data_rate: float, optional
+            The sampling rate of the signal.
+        """
         self.data_init = None
-        self.unfiltered_signal = None
         self.output = None
         self.u = None
         self.s = None
@@ -19,50 +28,109 @@ class Solution:
         self.analysis = None
         self.data_rate = data_rate
 
-    def _from_dict(self, dict):
+    def _from_dict(self, dict: dict) -> None:
+        """
+        Set attribute of the Solution object from a dictionary.
+        Parameters:
+        -----------
+        dict: dict
+            The dictionary containing the decomposition output.
+
+        """
         for key, value in dict.items():
             setattr(self, key, value)
 
     @staticmethod
-    def _stack_field(data, key):
+    def _stack_field(data: list, key: str) -> np.ndarray:
+        """
+        Stack the field of the decomposition output if solved by windows.
+        Parameters:
+        -----------
+        data: list
+            The list of dictionaries containing the decomposition output.
+        key: str
+            The key of the field to stack.
+
+        Raises:
+        -------
+        KeyError: If the key is not in the decomposition output.
+
+        Returns:
+        --------
+            np.ndarray: The stacked field.
+
+        """
         try:
             return np.stack([d[key] for d in data])
         except KeyError as e:
             raise KeyError(f"Missing key '{key}' in decomposition output") from e
 
-    def from_signal_decomposition(self, decomposition_dict, initial_data_shape=None):
+    def from_signal_decomposition(self, decomposition_dict: dict, initial_data_shape: tuple=None)->None:
+        """
+        Initialize the Solution object from the decomposition output.
+
+        Parameters:
+        -----------
+        decomposition_dict: dict
+            The dictionary containing the decomposition output from the ArtifactRemover class.
+        initial_data_shape: tuple, optional
+            The initial shape of the data before decomposition.
+
+        """
         decomposition_list = decomposition_dict if isinstance(decomposition_dict, list) else [decomposition_dict]
         self.output = self._stack_field(decomposition_list, "output")
         self.s = self._stack_field(decomposition_list, "s")
         self.s_reduced = self._stack_field(decomposition_list, "s_reduced")
-        self.unfiltered_output = self._stack_field(decomposition_list, "unfiltered_signal")
         self.init_data = self._stack_field(decomposition_list, "data")
 
         self.output = self.output.reshape(initial_data_shape)
-        self.unfiltered_output = self.unfiltered_output.reshape(initial_data_shape)
         self.init_data = self.init_data.reshape(initial_data_shape)
 
         self.s = self.s.reshape((initial_data_shape[0], initial_data_shape[1], -1))
         self.s_reduced = self.s_reduced.reshape((initial_data_shape[0], initial_data_shape[1], -1))
         self.is_empty = False
 
-    def from_notch_filter(self, out_dict, initial_data_shape=None):
+    def from_notch_filter(self, out_dict: dict, initial_data_shape: tuple=None)->None:
+        """
+        Initialize the Solution object from the notch filter output.
+
+        Parameters:
+        -----------
+        out_dict: dict
+            The dictionary containing the notch filter output from the ArtifactRemover class.
+        initial_data_shape: tuple, optional
+            The initial shape of the data before filtering.
+
+        """
         decomposition_list = out_dict if isinstance(out_dict, list) else [out_dict]
         self.output = self._stack_field(decomposition_list, "output")
         self.s = None
         self.s_reduced = None
-        self.unfiltered_output = None
         self.init_data = self._stack_field(decomposition_list, "data")
 
         self.output = self.output.reshape(initial_data_shape)
-        self.unfiltered_output = None
         self.init_data = self.init_data.reshape(initial_data_shape)
 
         self.s = None
         self.s_reduced = None
         self.is_empty = False
 
-    def get(self, key):
+    def get(self, key: str) -> np.ndarray:
+        """
+        Get value of the attribute of the Solution object.
+        Parameters:
+        -----------
+        key: str
+            The key of the attribute to get.
+
+        Raises:
+        -------
+        RuntimeError: If the class solution do not have attribute: key.
+        
+        Returns:
+        --------
+        np.ndarray: The value of the attribute.
+        """
         if not isinstance(key, list):
             key = [key]
         to_return = []
@@ -79,7 +147,7 @@ class Solution:
             value = [value]
         for k, item in zip(key, value):
             setattr(self, k, item)
-        
+
     def add_data(self, key, value, axis=-1):
         if not isinstance(key, list):
             key = [key]
@@ -89,9 +157,8 @@ class Solution:
         for k, item, ax in zip(key, value, axis):
             setattr(self, k, np.concatenate((getattr(self, k), item), axis=ax))
 
-
     def _get_all_decomposition_output(self):
-        keys = ["init_data", "output", "unfiltered_output", "u", "v", "s", "s_reduced"]
+        keys = ["init_data", "output", "u", "v", "s", "s_reduced"]
         return {key: attrib for key, attrib in self.__dict__.items() if key in keys}
 
     def save(self, path):
@@ -111,7 +178,6 @@ class Solution:
         compute_signal_error=False,
         compute_frequency_analysis=True,
         groundtruth_signals=None,
-        output_filtered=True,
         average_batch=False,
         average_channels=False,
     ) -> dict:
@@ -120,7 +186,6 @@ class Solution:
             compute_frequency_analysis,
             average_batch=average_batch,
             average_channels=average_channels,
-            data_rate=self.data_rate
+            data_rate=self.data_rate,
         )
-        output = self.output if output_filtered else self.unfiltered_output
-        return self.analysis.process(self.init_data, output, gt_signals=groundtruth_signals)
+        return self.analysis.process(self.init_data, self.output, gt_signals=groundtruth_signals)

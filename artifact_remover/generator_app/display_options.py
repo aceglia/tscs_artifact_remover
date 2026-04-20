@@ -30,7 +30,7 @@ class DisplayWidget(QWidget):
         layout.addWidget(self.white_noise_btn, 2, 0, 1, 1)
         layout.addWidget(self.cursor_pos, 3, 0, 1, 1)
 
-        layout.setAlignment(Qt.AlignTop) 
+        layout.setAlignment(Qt.AlignTop)
         self.setLayout(layout)
 
     def on_draw_fft_clicked(self):
@@ -43,7 +43,7 @@ class DisplayWidget(QWidget):
 
     def add_white_noise(self, state):
         self.parent.add_white_noise()
-    
+
     def update_draw_params(self):
         self.parent.plot.update_draw_params(self.draw_fft)
 
@@ -53,10 +53,7 @@ class DisplayWidget(QWidget):
     def disable(self):
         for item in self.findChildren(QWidget):
             item.setEnabled(False)
-        
+
     def enable(self):
         for item in self.findChildren(QWidget):
             item.setEnabled(True)
-        
-
-

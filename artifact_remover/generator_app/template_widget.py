@@ -21,21 +21,17 @@ class ParamsWidget(QWidget):
         self.channel_selecter = None
         self.parent = parent
         self.channels = []
-        self.short_process_args = {            
+        self.short_process_args = {
             "amplitude": 1,
             "delay_1": 0.1,
             "delay_2": 0.2,
             "num": [1],
             "den": [0.02, 0.5, 12],
-            'T':1,
-            'factors': [1, 2, 1]
+            "T": 1,
+            "factors": [1, 2, 1],
         }
         self.init_template_args = self.short_process_args.copy()
-        self.init_template_args.update({
-            "sampling_rate": 2000,
-            "duration": 0.007,
-            'stim_freq': 30
-        })
+        self.init_template_args.update({"sampling_rate": 2000, "duration": 0.007, "stim_freq": 30})
         self.set_options(self.init_template_args)
         self.template_arguments = {}
         self._init_layout()
@@ -43,7 +39,7 @@ class ParamsWidget(QWidget):
     def _init_layout(self):
         layout = QGridLayout()
         layout.addWidget(QLabel("<b><font size=5>Artifact template parameters</font></b>"), 0, 0, 1, 4, Qt.AlignCenter)
-        
+
         layout.addWidget(QLabel("Transfert function\n denominator:"), 1, 0, 1, 1)
         self.input_den = [QLineEdit() for _ in range(3)]
         self.template_arguments = self.get_template_arguments()
@@ -72,6 +68,7 @@ class ParamsWidget(QWidget):
         layout.addWidget(QLabel("Transfert function: "), 5, 0, 1, 1)
         self.transfert_text = QPlainTextEdit()
         self.transfert_text.setReadOnly(True)
+        self.transfert_text.setStyleSheet("background-color: transparent;border: 0;")
         layout.addWidget(self.transfert_text, 5, 2, 1, 3)
 
         layout.addWidget(QLabel("Stimulation frequency:"), 6, 0, 1, 1)
@@ -82,13 +79,13 @@ class ParamsWidget(QWidget):
 
         layout.addWidget(QLabel("Sampling rate:"), 7, 0, 1, 1)
         self.input_rate = QLineEdit()
-        self.input_rate.setText(str(self.template_arguments['sampling_rate']))
+        self.input_rate.setText(str(self.template_arguments["sampling_rate"]))
         self.input_rate.textChanged.connect(partial(self._set_attrib, key="sampling_rate"))
         layout.addWidget(self.input_rate, 7, 1, 1, 1)
 
         layout.addWidget(QLabel("Template_duration:"), 8, 0, 1, 1)
         self.input_duration = QLineEdit()
-        self.input_duration.setText(str(self.template_arguments['duration']))
+        self.input_duration.setText(str(self.template_arguments["duration"]))
         self.input_duration.textChanged.connect(self.set_duration)
 
         self.apply_button = QPushButton("Apply to current channel")
@@ -105,16 +102,16 @@ class ParamsWidget(QWidget):
         self.setLayout(layout)
 
     def update_transfert_text(self):
-        tf = str(self.parent.generator._get_transfert_fct([1], self.den)).split('\n')
-        text = tf[-3].replace('1', str(self.amplitude)) + '\n'
-        text += '\n'.join(tf[-2:])
+        tf = str(self.parent.generator._get_transfert_fct([1], self.den)).split("\n")
+        text = tf[-3].replace("1", str(self.amplitude)) + "\n"
+        text += "\n".join(tf[-2:])
         self.transfert_text.setPlainText(text)
 
     def set_amplitude(self, text):
         amplitude = check_list(text)
         if amplitude is not None:
             self.amplitude = amplitude if not isinstance(amplitude, list) else get_from_range(amplitude)
-        
+
     def set_delays(self, i, text):
         delay = check_list(text)
         if delay is not None:
@@ -124,7 +121,7 @@ class ParamsWidget(QWidget):
         den = check_list(text)
         if den is not None:
             self.den[i] = den if not isinstance(den, list) else get_from_range(den)
-        
+
     def set_factors(self, i, text):
         factors = check_list(text)
         if factors is not None:
@@ -132,17 +129,17 @@ class ParamsWidget(QWidget):
 
     def get_raw_values(self):
         return {
-            'amplitude': check_list(self.input_amplitude.text()),
-            'den': [check_list(self.input_den[i].text()) for i in range(3)],
-            'delay_1': check_list(self.input_delay[0].text()),
-            'delay_2': check_list(self.input_delay[1].text()),
-            'num': [1],
-            'factors': [check_list(self.input_factors[i].text()) for i in range(3)],
-            'artifact_duration': check_list(self.input_duration.text())
+            "amplitude": check_list(self.input_amplitude.text()),
+            "den": [check_list(self.input_den[i].text()) for i in range(3)],
+            "delay_1": check_list(self.input_delay[0].text()),
+            "delay_2": check_list(self.input_delay[1].text()),
+            "num": [1],
+            "factors": [check_list(self.input_factors[i].text()) for i in range(3)],
+            "artifact_duration": check_list(self.input_duration.text()),
         }
 
     def _set_attrib(self, text, key):
-        if text == '':
+        if text == "":
             return
         setattr(self, key, float(text))
 
@@ -171,12 +168,12 @@ class ParamsWidget(QWidget):
         self.parent.apply_template(self.get_template_arguments())
         channel = self.parent.display_options.channel_selecter.get_channels()
         self.template_arguments[channel[1]] = template_arguments.copy()
-    
+
     def update_random_param(self):
         self.set_amplitude(self.input_amplitude.text())
         [self.set_delays(i, self.input_delay[i].text()) for i in range(2)]
-        [self.set_denominator(i, self.input_den[i].text()) for i in range(3)]        
-    
+        [self.set_denominator(i, self.input_den[i].text()) for i in range(3)]
+
     def update_template(self):
         self.update_random_param()
         self.update_transfert_text()
@@ -195,7 +192,7 @@ class ParamsWidget(QWidget):
         self.set_options(config)
 
     def get_short_config(self, value_item=None):
-        return self.get_template_arguments(self.short_process_args, value_item)    
+        return self.get_template_arguments(self.short_process_args, value_item)
 
 
 class Template:

@@ -1,21 +1,30 @@
-from artifact_remover.streaming_utils import DataStreamer, CircularBuffer
-from artifact_remover.automatic_remover import ArtefactRemover, remove_singular_values
-from artifact_remover.solution import Solution
-from artifact_remover.processing_utils import median_frequency, robust_max_percentile
-import numpy as np
+from functools import partial
 
+from artifact_remover.streaming_utils import DataStreamer, CircularBuffer
+from artifact_remover.automatic_remover import ArtefactRemover
+from artifact_remover.solution import Solution
+from artifact_remover.processing_utils import Quality
+import numpy as np
 
 class RtArtefactRemover(ArtefactRemover):
     def __init__(self, data=None, window_size=2000, **data_loader_kwargs):
         super().__init__(None, **data_loader_kwargs)
         self.offline = False if data is None else True
-        self.streamer = DataStreamer(data=data, offline=self.offline, **data_loader_kwargs)
-        self.solution = Solution()
         self.window_size = window_size
-        self.buffer = CircularBuffer(1, window_size)
-        self.to_evaluate_buffer = CircularBuffer(2, int(self.streamer.data_rate))
         self.output = None
+        self.evaluation_wind = 1000
+
+        self.to_evaluate_buffer = CircularBuffer(2, int(self.evaluation_wind))
+        self.buffer = CircularBuffer(1, window_size)
+
+        self.last_rejected = None
+        if data is not None:
+            self.streamer = DataStreamer(data=data, offline=self.offline, **data_loader_kwargs)
+
+        self.solution = Solution()
+
         self.idx = 0
+        self.quality = Quality(shape=(1, 1, self.evaluation_wind))
 
     def get_init_signal(self):
         return self.streamer.init_data
@@ -27,30 +36,59 @@ class RtArtefactRemover(ArtefactRemover):
         else:
             self.buffer.append(data)
             data = self.buffer.get()
-            data_tmp = self.streamer.data_loader.apply_filtering(data)
+            data_tmp = self.streamer.data_loader.apply_filtering(data, offline=False)
+            if process_kwargs["notch_filter"]:
+                process_kwargs["offline"] = False
+            process_kwargs["rejected_idx"] = None if self.idx % self.update_svd_every == 0 else self.last_rejected
             output = self._remove_artifact_from_windows(data_tmp, **process_kwargs)
-            # self.to_evaluate_buffer.append(np.hstack([data, output[None]]))
-            self._stream_evaluation(np.vstack([data[0], output[None]]))
+            if process_kwargs["notch_filter"]:
+                output = output[0]
+            # self.to_evaluate_buffer.append(np.hstack([data, output[None, None]]))
             if self.offline:
                 self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size] = output[-self.streamer.chunk_size :][
                     None, :
                 ]
-            self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size]
             # if self.to_evaluate_buffer.full:
             #     self._stream_evaluation(self.to_evaluate_buffer.get())
 
     def _stream_evaluation(self, data):
-        mdf = median_frequency(data, self.streamer.data_rate)
-        max_perc = robust_max_percentile(data)
+        data_weighted = np.concatenate([data[:, :, :-100], data[:, :, -100:] *10], axis=-1)
+        self.quality_fct(raw=None, processed=data[0, 1], analysis=[0, 1, 2, 3])
+        quality = self.quality_fct(raw=data[0, 0], processed=None, analysis=[0, 1, 2, 3])
+        data_fft = np.abs(rfft(data_weighted[0, 1]))
+        self.quality_fct(raw=data_fft, processed=None, analysis=[1])
+        from artifact_remover.processing_utils import line_length, kurtosis_value, robust_max_percentile, median_frequency
+        np.cumsum(np.abs(rfft(data[0, 0])))[-1]
+        np.cumsum(np.abs(rfft(data[0, 1])))[-1]
+        np.sum(np.abs(np.diff(data[0, 1])), axis=-1)  
+        line_length(data[0, 0])
+        line_length(data[0, 1])
+        spike_score(data[0, 0], 10)
+        spike_score(data[0, 1], 10)
+        def spike_score(x, k=20):
+            threshold = np.percentile(np.abs(x), 95)
+            score = np.mean(np.abs(x)[np.abs(x) > threshold])
+            # topk = np.mean(ax[np.argpartition(ax, -k)[-k:]]) * k
+            return score
+        kurtosis_value(data[0, 0], 50)
+        kurtosis_value(data[0, 1], 50)
+        robust_max_percentile(np.abs(rfft(data[0, 0]))[rfftfreq(600, 1 / self.streamer.data_loader.data_rate) < 150], 99.2)
+        robust_max_percentile(np.abs(rfft(data[0, 1]))[rfftfreq(600, 1 / self.streamer.data_loader.data_rate) < 150], 99.9)
+        median_frequency(data[0, 0], self.streamer.data_loader.data_rate)
+        median_frequency(data[0, 1], self.streamer.data_loader.data_rate)
+        
+        line_length_fft = line_length(np.abs(rfft(data_weighted[0, 0])))
+        from artifact_remover.processing_utils import rfft, rfftfreq
+        import matplotlib.pyplot as plt
+        plt.plot(rfftfreq(600, 1 / self.streamer.data_loader.data_rate), np.abs(rfft(data_weighted[0, 0, :])))
+        plt.plot(rfftfreq(600, 1 / self.streamer.data_loader.data_rate), np.abs(rfft(data_weighted[0, 1, :])))
+        # plt.plot(data_weighted[0, 0])
+        # plt.plot(data_weighted[0, 1])
+        plt.show(block=True)
 
-        # from artifact_remover.processing_utils import rfft
-        # import matplotlib.pyplot as plt
-        # plt.plot(np.abs(rfft(data[0, :])))
-        # plt.plot(np.abs(rfft(data[1, :])))
-        # # plt.plot(data[0, 0])
-        # plt.show(block=True)
-
-    def process_all_data(self, chunk_size=None, data_window=None, channel_idxs=None, **process_kwargs):
+    def process_all_data(
+        self, chunk_size=None, data_window=None, channel_idxs=None, update_svd_every=1, **process_kwargs
+    ):
         if data_window is not None or channel_idxs is not None:
             data = self.get_init_signal()
             if not isinstance(channel_idxs, list):
@@ -62,6 +100,8 @@ class RtArtefactRemover(ArtefactRemover):
         self.streamer.chunk_size = chunk_size if chunk_size else self.streamer.chunk_size
         import time
 
+        self.update_svd_every = update_svd_every
+
         if not process_kwargs["notch_filter"]:
             fft_freqs = np.fft.rfftfreq(
                 self.window_size - (process_kwargs["hankel_size"] - 1) * process_kwargs.get("hankel_delay", 1),
@@ -69,7 +109,17 @@ class RtArtefactRemover(ArtefactRemover):
             )
         else:
             fft_freqs = None
-        process_kwargs['fft_freqs'] = fft_freqs
+        process_kwargs["fft_freqs"] = fft_freqs
+        process_kwargs["offline"] = False
+        self.quality_fct = partial(
+            self.quality.compute_quality,
+            ground_truth=None,
+            channel=0,
+            idx=0,
+            fs=self.streamer.data_loader.data_rate,
+            kw=20,
+            fft_freqs=fft_freqs,
+        )
         tic = time.time()
         for i in range(self.streamer.num_chunks):
             _, data_chunk = self.streamer.get_next_chunk(self.streamer.chunk_size)
@@ -94,32 +144,39 @@ class RtArtefactRemover(ArtefactRemover):
         self,
         data,
         hankel_size=None,
-        randomized=True,
+        randomized=False,
         nb_principal_components=None,
         epsilon=None,
         notch_filter=False,
-        quality_factor=150,
+        quality_factor=30,
         frequency_peaks=30,
+        first_peak=30,
         hankel_delay=1,
         freq_bounds=[10, 450],
         factor=0.5,
         fft_freqs=None,
+        rejected_idx=None,
         **kwargs
     ):
         data = data.flatten()
         if notch_filter:
             output = self._perform_notch_filter(
-                frequency_peaks, data, self.streamer.data_loader.data_rate, quality_factor, return_dict=False
+                frequency_peaks,
+                data,
+                self.streamer.data_loader.data_rate,
+                quality_factor,
+                return_dict=False,
+                first_peak=first_peak,
+                offline=False,
             )
         else:
-            n_reconstruct = None #self.streamer.chunk_size if hankel_delay == 1 else None
             output = self._perform_decomposition(
                 data,
                 hankel_size,
                 randomized,
                 False,
                 nb_principal_components,
-                n_reconstruct,
+                None,
                 epsilon,
                 False,
                 hankel_delay,
@@ -128,7 +185,9 @@ class RtArtefactRemover(ArtefactRemover):
                 freq_bounds=freq_bounds,
                 factor=factor,
                 fft_freqs=fft_freqs,
+                rejected_idx=rejected_idx,
             )
+            self.last_rejected = rejected_idx
         return output
         # if self.offline:
         #     self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size] = output[-self.streamer.chunk_size :][

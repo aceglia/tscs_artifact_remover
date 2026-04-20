@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QWidget,
     QCheckBox,
 )
-from PyQt5.QtCore import QRunnable, QTimer, pyqtSlot
+from PyQt5.QtCore import QRunnable, QObject, pyqtSignal, pyqtSlot
 
 from functools import partial
 
@@ -34,7 +34,7 @@ class LogBox(QPlainTextEdit):
         """
         self.appendPlainText(self._add_current_time(message))
         self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
-        QTimer.singleShot(600, self.calling_fct)
+        # QTimer.singleShot(600, self.calling_fct)
 
     def _add_current_time(self, message: str) -> str:
         """
@@ -156,6 +156,11 @@ class ChannelSelecter(QWidget):
         self.close()
 
 
+class WorkerSignals(QObject):
+    finished = pyqtSignal(object)
+    error = pyqtSignal(Exception)
+
+
 class Worker(QRunnable):
     """Worker thread.
 
@@ -173,11 +178,13 @@ class Worker(QRunnable):
         self.fn = fn
         self.args = args
         self.kwargs = kwargs
-
-    def set_kwargs(self, **kwargs):
-        self.kwargs.update(kwargs)
+        self.signals = WorkerSignals()
 
     @pyqtSlot()
     def run(self):
         """Initialise the runner function with passed args, kwargs."""
-        self.fn(*self.args, **self.kwargs)
+        try:
+            result = self.fn(*self.args, **self.kwargs)
+            self.signals.finished.emit(result)
+        except Exception as e:
+            self.signals.error.emit(e)

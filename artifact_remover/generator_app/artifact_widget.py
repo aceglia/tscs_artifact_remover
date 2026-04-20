@@ -52,14 +52,18 @@ class ArtifactWidget(QWidget):
             fs=self.template_options.params_widget.sampling_rate,
         )
         self.plot.update_template(self.template, self.sampled_template)
-        self.train_artifact = self.generator.generate_artifact(    
-            stimulation_frequency=self.template_options.params_widget.stim_freq, 
+        self.train_artifact = self.generator.generate_artifact(
+            stimulation_frequency=self.template_options.params_widget.stim_freq,
             sampling_rate=self.template_options.params_widget.sampling_rate,
             phase_inversion=self.display_options.phase_inversion,
             output_shape=self.data_shape,
             **self.template_options.params_widget.get_raw_values(),
         )
-        train = self.apply_white_noise(self.train_artifact) if self.display_options.white_noise_btn.isChecked() else self.train_artifact
+        train = (
+            self.apply_white_noise(self.train_artifact)
+            if self.display_options.white_noise_btn.isChecked()
+            else self.train_artifact
+        )
         self.plot.update_stim_train(train)
 
     def apply_white_noise(self, data):

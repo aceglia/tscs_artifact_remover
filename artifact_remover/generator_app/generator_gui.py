@@ -159,10 +159,10 @@ class GUI(QMainWindow):
             "Export option",
             "Chose a basis name for data export:",
             QLineEdit.Normal,
-            self.default_save_name.split('/')[-1],
+            self.default_save_name.split("/")[-1],
         )
         if ok:
-            self.default_save_name = "/".join(self.default_save_name.split('/')[:-1]) + '/' + text
+            self.default_save_name = "/".join(self.default_save_name.split("/")[:-1]) + "/" + text
             self.save()
 
     def show_split_windows(self, text):
