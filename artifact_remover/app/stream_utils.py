@@ -1,6 +1,69 @@
-import numpy as np
-from multiprocessing import RawArray, RawValue
+import queue
 
+import numpy as np
+from multiprocessing import RawArray, RawValue, Queue
+import time
+
+
+class ClearableQueue(Queue):
+    def __init__(self, maxsize=1000):
+        super().__init__(maxsize=maxsize)
+    
+    def clear(self):
+        while not self.empty():
+            try:
+                self.get_nowait()
+            except Exception:
+                break
+        
+    def put_nowait(self, obj):
+        try:
+            super().put_nowait(obj)
+        except self.Full:
+            self.clear()
+            super().put_nowait(obj)
+
+    def get_stacked(self):
+        data, time, idx = [], [], []
+        n_read = 0
+        while True:
+            try:
+                data_tmp, time_tmp, idx_tmp = self.get_nowait()
+                data.append(data_tmp)
+                time.append(time_tmp)
+                idx.append(idx_tmp)
+                n_read += 1
+            except queue.Empty:
+                break
+        if n_read == 0:
+            return None
+        data_stacked = {}
+        unique_idx = np.unique(idx)
+        for i in unique_idx:
+            idx_tmp = np.argwhere(idx == i)
+            data_i = np.hstack(np.array(data)[idx_tmp])
+            time_i = np.hstack(np.array(time)[idx_tmp])
+            data_stacked[i] = (data_i, time_i)
+        return data_stacked
+
+def dispatch_queue(results):
+    data, t, total_samples, idx = results
+    return data, t, total_samples, idx
+
+
+def get_config_by_idx(configs, idx):
+    return
+
+
+def empty_queue(queue, timeout=0.01):
+    all_data = []
+    tic = time.perf_counter()
+    while time.perf_counter() - tic < timeout:
+        try:
+            all_data.append(queue.get_nowait())
+        except Exception:
+            break
+    return all_data
 
 class SharedArray:
     def __init__(self, size, dtype=np.float64):

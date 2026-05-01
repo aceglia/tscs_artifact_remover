@@ -1,5 +1,6 @@
 import pyqtgraph as pg
 import numpy as np
+from time import perf_counter, time
 from scipy.fft import rfft, rfftfreq
 from PyQt5.QtWidgets import QGraphicsProxyWidget, QPushButton
 from PyQt5.QtCore import Qt
@@ -21,21 +22,24 @@ class ChannelPlot:
         self.name = channel
         self.idx = idx
         self.visible = True
-        self.visible_pen_clean = pg.mkPen(color=(255, 0, 0), width=2)
+        self.visible_pen_clean = pg.mkPen(color=(255, 0, 0), width=1)
         self.visible_pen_raw = pg.mkPen(color=(0, 0, 0, 256 // 6), width=1)
-        self.pen_clean = pg.mkPen(color=(255, 0, 0), width=2)
+        self.pen_clean = pg.mkPen(color=(255, 0, 0), width=1)
         self.pen_raw = pg.mkPen(color=(0, 0, 0, 256 // 6), width=1)
         self.invisible_pen = pg.mkPen(color=(0, 0, 0, 0))
         self.fft_plot = False
         self.view = None
         self.proxy = None
+        self.n_times_plotted = 0
+        self.window_reached = False
 
     def init_plot(self, data, time, rate):
-        self.time = time
+        self.time = time[0]
         self.freqs = rfftfreq(len(data[0]), d=1 / rate)
         self.plot_item = self.parent.addPlot(row=self.idx, col=0)
-        self.plot_item.setXRange(self.time[0], self.time[-1], padding=0)
+        # self.plot_item.setXRange(self.time[0], self.time[-1], padding=0)
         self.plot_item.setClipToView(True)
+        self.plot_item.setDownsampling(auto=True, mode='peak')
         self.plot_item.setLabel("left", self.name, units="µV")
         self.plot_item.getAxis("left").enableAutoSIPrefix(False)
         self.plot_item.showGrid(x=True, y=True, alpha=0.2)
@@ -51,12 +55,26 @@ class ChannelPlot:
         self.parent.addItem(self.proxy_btn, row=self.idx, col=1)
 
         self.view = self.plot_item.getViewBox()
-        self.view.setLimits(xMin=self.time[0], xMax=self.time[-1])
+        self.view.enableAutoRange(x=False, y=False)
+        if np.all(self.time[self.time == np.nan]):
+            if rate is not None:
+                start_time = 0
+                end_time = len(data[0]) / rate
+            else:
+                start_time = 0
+                end_time = len(data[0])
+        else:
+            start_time = self.time[0]
+            end_time = self.time[-1]
+        self.window = end_time - start_time
+        self.plot_item.setXRange(start_time, end_time, padding=0)
+        self.view.setLimits(xMin=start_time, xMax=end_time)
         self.raw, self.clean = data
         self.raw_fft = abs(rfft(self.raw))
         self.clean_fft = abs(rfft(self.clean))
         self.curves = self.plot_item.multiDataPlot(x=self.time, y=data)
         self._set_curve_params()
+        self.current_start_time = 0
 
     def on_info_button(self):
         self.parent.show_config(self.idx)
@@ -73,23 +91,37 @@ class ChannelPlot:
     def update_plot(self, data=None, data_type="both", auto_range=True, time=None):
         if time is not None:
             self.time = time
-        self.raw = data[0] if data is not None else self.raw
-        self.clean = data[1] if data is not None else self.clean
-        y = [self.raw, self.clean]
-        x = self.time
+        
+        if len(data) == 2:
+            self.raw = data[0] if data is not None else self.raw
+            self.clean = data[1] if data is not None else self.clean
+            y = [self.raw, self.clean]
+            x = [time[0], time[1]] if len(time) == 2 else self.time
+        if len(data) == 1:
+            if data_type == "raw":
+                self.raw = data[0] if data is not None else self.raw
+                y = [self.raw]
+            elif data_type == "clean":
+                self.clean = data[0] if data is not None else self.clean
+                y = [self.clean]
+            x = [time[0]]
+
         if self.fft_plot:
             self.raw_fft = abs(rfft(self.raw))
             self.clean_fft = abs(rfft(self.clean))
             x = self.freqs
             y = [self.raw_fft, self.clean_fft]
+
         if auto_range:
-            self.plot_item.setXRange(x[0], x[-1], padding=0)
-            self.view.setLimits(xMin=x[0], xMax=x[-1])
+            self.plot_item.setXRange(x[0][0], x[0][-1], padding=0)
+            self.view.setLimits(xMin=x[0][0], xMax=x[0][-1])
+
         self.view.enableAutoRange(x=auto_range, y=auto_range)
+
         if data_type == "raw" or data_type == "both":
-            self.curves[0].setData(x=x, y=y[0], pen=self.pen_raw)
+            self.curves[0].setData(x=x[0], y=y[0], pen=self.pen_raw)
         if data_type == "clean" or data_type == "both":
-            self.curves[1].setData(x=x, y=y[1], pen=self.pen_clean)
+            self.curves[1].setData(x=x[1], y=y[1], pen=self.pen_clean)
 
     def set_link_x(self, plot_item):
         self.plot_item.setXLink(plot_item)
@@ -259,17 +291,23 @@ class OfflinePlotter(Plotter):
 
 
 class StreamPlotter(Plotter):
-    def __init__(self, parent=None, rate=30):
+    def __init__(self, parent=None, rate=60):
         super().__init__(parent)
         self.rate = rate
         self.timer = pg.QtCore.QTimer()
         self.timer.timeout.connect(self.update_plot)
         self.is_streaming = False
+        self._current_block = -1
+        self.process_available = False
+        self.display_window_sec = 5
 
-    def initialize_data(self, data_buffer, time, channels, display_windows):
+    def initialize_data(self, data_buffer, time, channels, display_windows, queue_plot, is_running_event):
         self.display_windows = display_windows
-        self.processed_svd_buffer = CircularBuffer(len(channels), self.display_windows)
-        self.processed_notch_buffer = CircularBuffer(len(channels), self.display_windows)
+        self.queue_plot = queue_plot
+        self.is_running_event = is_running_event
+        self.display_window_sec = self.display_windows / self.parent.acquisition_rate
+        self.processed_svd_buffer = [CircularBuffer(1, self.display_windows) for _ in range(len(channels))]
+        self.processed_notch_buffer = [CircularBuffer(1, self.display_windows) for _ in range(len(channels))]
         self.channels = channels
         self.visible_channels = self.parent.display_options.channel_selecter.get_channel_names()
         self.raw_data = data_buffer
@@ -280,31 +318,93 @@ class StreamPlotter(Plotter):
         self.plot_list = []
         self.init_plots()
         self.built = True
-        self.timer.start(1000 // self.rate)        
 
-    def update_plot(self, data_type="both", auto_range=True):
-        if not self.is_streaming:
+    def get_last_processed(self):
+        all_elements = []
+        while True:
+            try:
+                data = self.queue_plot.get_nowait()
+                return data
+            except Exception:
+                return 
+
+    def update_plot(self, data_type="raw", auto_range=False, force=False):
+        if not self.is_running_event.is_set() and not force:
             return
         visible_idx = [self.channels.index(c) for c in self.visible_channels]
-        time = None
+        # time = self.time
+        raw, t_raw = self.get_raw()
+        data = [raw]
+        time = [t_raw]
+        # data_type = "raw"
+        processed = self.parent.get_last_processed()
+        if len(processed) != 0:
+            process_mat = np.concatenate(processed, axis=-1)[:, -self.processed_svd_buffer.shape[1]:]
+            t_clean, clean = process_mat[0], process_mat[1:]
+
+            self.append_clean(clean, t_clean)
+            clean, t_clean = self.get_clean()
+            data.append(clean)
+            time.append(t_clean)
+            # data_type = "both"
+            # time, data = self.align_time(time, data)
+        time, data, data_type = self.get_data_per_window(data, time, downsample=1)
+        channel_data = {
+            idx: [d[idx] for d in data]
+            for idx in visible_idx
+        }
+        self.setUpdatesEnabled(False)
         for plot in self.plot_list:
-            if plot.idx in visible_idx and plot.visible is False:
-                plot.set_visible(True)
-                plot.update_plot(
-                    [self.raw_signal[plot.idx, :], self.clean_signal[plot.idx, :]],
-                    data_type,
-                    auto_range,
-                    time=time,
-                )
+            if plot.idx in visible_idx:
+                if plot.visible is False:
+                    plot.set_visible(True)
+                plot.update_plot(channel_data[plot.idx], data_type, auto_range, time=time)
             elif plot.idx not in visible_idx and plot.visible is True:
                 plot.set_visible(False)
-            elif plot.idx in visible_idx and plot.visible is True:
-                plot.update_plot(
-                    [self.raw_signal[plot.idx, :], self.clean_signal[plot.idx, :]],
-                    data_type,
-                    auto_range,
-                    time=time,
-                )
+        self.setUpdatesEnabled(True)
+        self.process_available = False
+
+    def get_data_per_window(self, data, t, downsample=3):
+        if t is not None and len(t) > 0 and np.isfinite(t[0][-1]):
+            t_end = t[0][-1].item()
+            block_idx = int(t_end // self.display_window_sec)
+            if block_idx != self._current_block:
+                t_start = block_idx * self.display_window_sec
+                t_stop  = (block_idx + 1) * self.display_window_sec
+                self.current_start_time = t_start
+                [self.plot_list[i].plot_item.setXRange(t_start, t_stop, padding=0) for i in range(len(self.plot_list))]
+                [self.plot_list[i].view.setLimits(xMin=t_start, xMax=t_stop) for i in range(len(self.plot_list))]
+                self._current_block = block_idx
+
+        t_start_idx = np.argwhere(np.isclose(t[0], self.current_start_time, atol=1e-05))[0][0]
+        if len(data) == 2:
+            t_start_clean = np.argwhere(np.isclose(t[1], self.current_start_time, atol=1e-05))
+            t_start_clean = np.argwhere(t[1] >= self.current_start_time)
+            if len(t_start_clean) == 0:
+                x = [t[0][t_start_idx:]]
+                y = [data[0][:, t_start_idx:]]
+            else:
+                t_start_clean = t_start_clean[0][0]
+                x = [t[d][[t_start_idx, t_start_clean][d]:] for d in range(len(t))]
+                y = [da[:, [t_start_idx, t_start_clean][d]:] for d, da in enumerate(data)]
+        else:
+            x = [t[0][t_start_idx:]]
+            y = [data[0][:, t_start_idx:]]
+        times = [x_tmp[::downsample] for x_tmp in x]
+        data = [y[d][:, ::downsample] for d in range(len(y))]
+        data_type = 'raw' if len(data) == 1 else 'both'
+        return times, data, data_type
+        
+    def align_time(self, times, data):
+        raw_time, clean_time = times
+        raw_data, clean_data = data
+        try:
+            first_idx = np.argwhere(clean_time == raw_time[0])[0][0]
+            clean_data = clean_data[:, first_idx:]
+            clean_time = clean_time[first_idx:]
+        except IndexError:
+            return times, data
+        return [raw_time, clean_time], [raw_data, clean_data]
 
     def update_data(self, data_svd=None, data_notch=None, idx=None):
         if idx is not None:
@@ -314,6 +414,7 @@ class StreamPlotter(Plotter):
             self.processed_svd_buffer.append(data_svd, fill_discontinuous=True)
         if data_notch is not None:
             self.processed_notch_buffer.append(data_notch, fill_discontinuous=True)
+        self.process_available = True
 
     def update_channels(self, data_notch=None, data_svd=None, idx=None):
         if data_svd is not None:
@@ -324,22 +425,32 @@ class StreamPlotter(Plotter):
     def update_filter(self, filter_type):
         self.current_filter = filter_type
 
-    @property
-    def clean_signal(self):
-        return (
-            self.processed_notch_buffer.get(self.display_windows)[0]
-            if self.current_filter == "notch"
-            else self.processed_svd_buffer.get(self.display_windows)[0]
-        )
-    
-    @property
-    def raw_signal(self):
-        return self.raw_data.get(self.display_windows)[0]
+    def get_raw(self, mode='valid'):
+        return self.raw_data.get()
+
+    def get_clean(self, mode='valid'):
+        clean_buffer = self.processed_notch_buffer if self.current_filter == "notch" else self.processed_svd_buffer
+        return clean_buffer.get()
+
+    def append_clean(self, data, t=None):
+        clean_buffer = self.processed_notch_buffer if self.current_filter == "notch" else self.processed_svd_buffer
+        clean_buffer.append(data, t, fill_discontinuous=True)
+        self.process_available = True
 
     def init_plots(self):
+        nan_vect = np.full(self.display_windows, np.nan)
         for c, channel in enumerate(self.channels):
-            data = [self.raw_signal[c, :], self.clean_signal[c, :]]
+            data = [nan_vect, nan_vect]
             self.plot_list.append(ChannelPlot(self, channel, c))
-            self.plot_list[-1].init_plot(data, self.time, self.parent.acquisition_rate)
+            self.plot_list[-1].init_plot(data, data, self.parent.acquisition_rate)
             if c != 0:
                 self.plot_list[c].set_link_x(self.plot_list[0].plot_item)
+            self.timer.start(1000 // self.rate)
+
+    def update_channels_visibility(self, channels):
+        self.visible_channels = channels
+        self.update_plot(force=True)
+
+    def start_plotting(self):
+        self.is_streaming = True
+        # self.timer.start(1000 // self.rate)

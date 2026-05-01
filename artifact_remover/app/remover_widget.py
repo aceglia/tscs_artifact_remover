@@ -25,6 +25,9 @@ class OptionWidget(QWidget):
         self.parent = parent
         self.current_frame = 0
         self.channels = []
+        self.event_log = None
+        self.queue = None
+        self.stream_mode = False
         self.init_process_args = {
             "notch_filter": self.type == "notch",
             "quality_factor": 80,
@@ -66,9 +69,12 @@ class OptionWidget(QWidget):
         # self.window_to_process_input = QLabel()
         # self.window_to_process_input.textChanged.connect(self.update_data_windows)
 
-    def init(self, channels, frames):
+    def init(self, channels, frames, streaming=False, event_log=None, queue=None):
         self.channels = channels
         self.n_frames = frames
+        self.streaming = streaming
+        self.event_log = event_log
+        self.queue = queue
         # self.channel_selecter = ChannelSelecter(self, self.channels, for_display=False)
         if self.type == "svd":
             self.set_automatic_hsize(Qt.Checked)
@@ -98,16 +104,21 @@ class OptionWidget(QWidget):
         if len(idxs) == 0:
             QMessageBox.warning(None, "No channel selected", "Please select at least one channel to process.")
             return
-        self.channel_idxs = self.channel_selecter.get_channel_idxs()
+        self.channel_idxs = idxs
         self.process_button.setEnabled(True)
         self.channel_selecter.quit()
 
     def update_params(self):
         process_arguments = self.get_process_arguments()
+        # if not self._check_config(process_arguments):
+        #     self.parent.log_box.log("WARNING: Invalid configuration. Please check the parameters.")
+        #     return
         if len(ensure_list(process_arguments["channel_idxs"])) == 0:
             self.parent.log_box.log("Unable to process data. Please select a channel to process first.")
-            self.process_button.setEnabled(False)
-        self.parent.process(**process_arguments)
+            # self.process_button.setEnabled(False)
+        if not self.streaming:
+            self.parent.process(**process_arguments)
+            
         list_empty = (
             [None] * len(self.channels)
             if f"Frame_{self.current_frame}" not in self.process_arguments
@@ -149,6 +160,8 @@ class OptionWidget(QWidget):
             return
         if idx is not None:
             process_argument = self.process_arguments[f"Frame_{self.current_frame}"][idx]
+            if process_argument is None:
+                return
             return self.get_short_config(value_item=process_argument)
         else:
             return self.process_arguments[f"Frame_{self.current_frame}"]
@@ -173,6 +186,8 @@ class OptionWidget(QWidget):
     def show_config(self, text):
         self.text_config.setPlainText(text)
 
+    def _check_config(self):
+        return True
 
 class NotchOptions(OptionWidget):
     def __init__(self, parent=None):
@@ -363,13 +378,16 @@ class SVDOptions(OptionWidget):
 
     def hankel_size_from_window(self, factor=8):
         self.process_window = int(self.input_wind.text())
-        return max(int((self.process_window / factor) / self.hankel_delay), 100)
+        return max(int((self.process_window / factor) / self.hankel_delay), 1)
 
     @property
     def hankel_size(self):
         if self.automatic_hsize:
             return self.hankel_size_from_window()
         return self._hankel_size
+    
+    def _check_config(self, process_arguments):
+        return True
 
 
 class Remover:
@@ -502,7 +520,6 @@ class StreamRemover(Remover):
         super().__init__(parent)
         self._adjust_value_for_stream()
         self.remover = None
-        self.processing_queue = None
         
     def _adjust_value_for_stream(self):
         self.svd_options.init_process_args["process_window"] = 500
@@ -512,14 +529,12 @@ class StreamRemover(Remover):
         self.svd_options.input_wind.setText(str(self.svd_options.init_process_args["process_window"]))
         self.notch_options.input_wind.setText(str(self.notch_options.init_process_args["process_window"]))
 
-    def new_stream(self, queues=None):
+    def new_stream(self, channels, events, queue_args):
         self.process_widgets.setCurrentIndex(0)
         self.current_filter = "notch"
-        self.processing_args = queues
-        [self.processing_args.put_nowait(self.get_current_config()) for _ in range(len(self.processing_args))]
+        self.channels = channels
         self.remover = RtArtefactRemover()
         self.enable()
+        for options in [self.notch_options, self.svd_options]:
+            options.init(channels, len(channels), streaming=True, events_log=events, queue=queue_args)
         
-    def get_process_arguments(self):
-        filter = self.svd_options if self.current_filter == "svd" else self.notch_options
-        return filter.get_process_arguments()

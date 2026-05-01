@@ -156,14 +156,16 @@ class RtArtefactRemover(ArtefactRemover):
         factor=0.5,
         fft_freqs=None,
         rejected_idx=None,
+        data_rate=None,
         **kwargs
     ):
+        data_rate = data_rate if data_rate is not None else self.streamer.data_loader.data_rate
         data = data.flatten()
         if notch_filter:
             output = self._perform_notch_filter(
                 frequency_peaks,
                 data,
-                self.streamer.data_loader.data_rate,
+                data_rate,
                 quality_factor,
                 return_dict=False,
                 first_peak=first_peak,
@@ -181,7 +183,7 @@ class RtArtefactRemover(ArtefactRemover):
                 False,
                 hankel_delay,
                 False,
-                data_rate=self.streamer.data_loader.data_rate,
+                data_rate=data_rate,
                 freq_bounds=freq_bounds,
                 factor=factor,
                 fft_freqs=fft_freqs,

@@ -1,4 +1,5 @@
 import json
+import queue
 import threading
 
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QDialog, QLabel
@@ -7,8 +8,10 @@ from PyQt5.QtCore import QObject, pyqtSignal
 import numpy as np
 from .gui_utils import ensure_list, Worker
 from ..io_utils import export_csv
+import multiprocessing as mp
 from ..processing_utils import Quality
 from .popup_utils import ChannelsPopup
+from .stream_utils import ClearableQueue
 from biosiglive.streaming.async_server import AsyncTCPServer
 import asyncio  
 
@@ -27,10 +30,15 @@ class StreamWidget(QWidget):
         self.quality = Quality()
         self._init_layout()
         self.bridge = Bridge()
+        self.n_process = parent.n_process
         self.paused = False
 
     def task(self, d, t):
-        self.bridge.data_received.emit(True)
+        # shape = d.shape
+        # self.bridge.data_received.emit(shape)
+        if not self.is_running_event.is_set():
+            self.is_running_event.set()
+        [self.queue_process[i].put_nowait((d[chan], t, i)) for i, chan in self.channels_mapping.items()]
 
     def _init_layout(self):
         self.play_button = QPushButton("Play")
@@ -80,17 +88,20 @@ class StreamWidget(QWidget):
         self.pause_button.setEnabled(True)
         self.play_button.setEnabled(False)
         if not self.paused:
-            self.parent.parent.log_box.log(f"Connecting to the client ({self.address}:{self.port}) and starting the stream...")
-            # self.server = AsyncTCPServer(self.address, self.port, buffer_length=self.display_window, expected_fs=self.acquisition_rate)
-            # asyncio.run(self.server.start(task=self.task))
+            self.parent.parent.log_box.log(f"Launching the stream at: {self.address}:{self.port} waiting for a client...")
+            self.channels_mapping = {i: [] for i in range(self.n_process)}
+            for i in range(len(self.channels)):
+                self.channels_mapping[i % self.n_process].append(i)
+            self.queue_process = [ClearableQueue(maxsize=20) for _ in range(self.n_process)]
+            self.is_running_event = mp.Event()
             thread = threading.Thread(target=self._run_asyncio, daemon=True)
             thread.start()
-            self.bridge.data_received.connect(self.parent.update_data)
-            self.parent.init_stream(self.display_window)
+            # self.bridge.data_received.connect(self.parent.update_data)
+            self.parent.init_stream(self.display_window, queue_process=self.queue_process, is_running_event=self.is_running_event)
 
     def _run_asyncio(self):
-        self.server = AsyncTCPServer(self.address, self.port, buffer_length=self.display_window, expected_fs=self.acquisition_rate)
-        self.server.init_buffer(len(self.channels))
+        self.server = AsyncTCPServer(self.address, self.port, buffer_length=self.display_window)
+        self.server.init_buffer(len(self.channels), dt = 1 / self.acquisition_rate)
         asyncio.run(self.server.start(task=self.task))
 
     def _stop(self):
@@ -113,7 +124,7 @@ class StreamWidget(QWidget):
 
     def get_data(self, n_chunks=None):
         if self.server is not None and self.server.buffer is not None:
-            return self.server.buffer.get(len=n_chunks)
+            return self.server.buffer.get()
         else:
             return None
 

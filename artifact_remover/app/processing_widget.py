@@ -1,13 +1,18 @@
 from functools import partial
 import json
+import time
 
 from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout, QHBoxLayout
 from PyQt5.QtCore import Qt, QThreadPool, QTimer
+from threading import Thread
 
 import numpy as np
 import multiprocessing as mp
 from scipy.fft import rfftfreq
 import scipy.io as sio
+
+from biosiglive.streaming.utils import CircularBuffer
+from .stream_utils import dispatch_queue, empty_queue, get_config_by_idx, ClearableQueue
 from .remover_widget import StreamRemover, OfflineRemover
 from .display_options import StreamDisplayWidget, OfflineDisplayWidget
 from .plot_widget import OfflinePlotter, StreamPlotter
@@ -28,7 +33,7 @@ class ProcessingWidget(QWidget):
     def _init_layout(self):
         right_panel = QWidget()
         right_layout = QVBoxLayout()
-        
+
         right_layout.addWidget(self.remover_options.process_widgets)
         right_layout.addWidget(self.display_options)
         right_panel.setLayout(right_layout)
@@ -297,11 +302,6 @@ class OfflineProcessingWidget(ProcessingWidget):
 class StreamProcessingWidget(ProcessingWidget):
     def __init__(self, parent=None, process_rate=60):
         super().__init__(parent)
-        self.remover_options = StreamRemover(self)
-        self.display_options = StreamDisplayWidget(self)
-        self.plot = StreamPlotter(self, rate=min(process_rate, 10))
-        self.stream_widget = StreamWidget(self)
-        self._init_layout()
         self.counter = 0
         self.last_processed_counter = 0
         self.process_rate = process_rate
@@ -310,60 +310,223 @@ class StreamProcessingWidget(ProcessingWidget):
         self.fft_freqs = None
         self.processing_queue = mp.Queue()
         self.processing = False
-
-    def process(self, **kwargs):
-        self.processing=True
-        self.n_new_data = self.counter - self.last_processed_counter
-        if self.n_new_data <= 0:
-            return
-        data = self.stream_widget.server.buffer.get(self.n_new_data)
-        data_rate = self.acquisition_rate
-        fct = partial(
-            self.remover_options.remover._remove_artifact_from_windows,
-            return_dict=False,
-            data_rate=data_rate,
-            offline=False
-        )
-        args = [(fct, self.data_queues[d], self.processing_args[d], d) for d in range(data.shape[0])]
-
-        for d in range(data.shape[0]):
-            self.pool.apply_async(self._process_worker, args=args[d], callback=self._on_process_done)
+        self._partial_fct = None
+        self.last_n_arrived = 0
+        self.tmp_processed = []
+        self.last_processed_time = None
+        self.streaming_data = False
+        self.frame_counter = 0
+        self.frames = {}
+        self.once_updated = False
+        self.last_n_processed = 0
+        self.running = False
+        self.last_seen = None
+        self.long_process_warning = False
+        self.queue_process = None
+        self.queue_plot = None
+        self.process_args_event = None
+        self.queue_process_args = None
+        self.process_buffer = None
+        self.is_running_event = None
+        self.channels_mapping = None
+        self.n_process = mp.cpu_count() - 4 if mp.cpu_count() > 2 else 1
+        self.remover_options = StreamRemover(self)
+        self.display_options = StreamDisplayWidget(self)
+        self.plot = StreamPlotter(self, rate=min(process_rate, 30))
+        self.stream_widget = StreamWidget(self)
+        self._init_layout()
 
     @staticmethod
-    def process_worker(fct, data_queue, process_args, idx):
-        kwargs = process_args.get()
-        data = data_queue.get()
-        res = fct(data=data, **kwargs)
-        return res[0], idx
+    def process(fct, queue_in, queue_out, process_args_event, queue_process_args, process_buffer, runing_event):
+        queue_empty = False
+        channel_configs = None
+        while runing_event.is_set() and not queue_empty:
+            data = queue_in.get_stacked()
+            if data is None:
+                queue_empty = True
+                time.sleep(0.01)
+                continue
+            idxs = list(data.keys())
+            n_new_data = data[idxs[0]][0].shape[-1]
+            [process_buffer[i].append(data, t) for i, (data, t) in data.items()]
+            data_list = [process_buffer[idx].get() for idx in idxs]
+            if process_args_event.is_set():
+                channel_configs = empty_queue(queue_process_args)[0]
+                channel_configs = get_config_by_idx(channel_configs, idx)
+                process_args_event.clear()
+
+            windows = [cfg.get("process_window", None) for cfg in channel_configs if cfg is not None]
+            max_window = max(windows) if windows else data.shape[1]
+            data = data[:, -max_window:]
+            t = t[-max_window:]
+
+            for d in range(len(data_list)):
+                queue_out.put_nowait(
+                    StreamProcessingWidget._process_worker(
+                        fct, data_list[d][0][-max_window:], data_list[d][1][-max_window:], channel_configs[idxs[d]], idxs[d], n_new_data
+                    )
+                )
+
+    # def process(self):
+    #     if self.last_n_arrived == 0:
+    #         self.processing = False
+    #         return
+    #     data, t = self.stream_widget.server.buffer.get()
+    #     current_buff_idx = self.stream_widget.server.buffer.total_samples
+    #     if self.last_seen:
+    #         n_new_data = current_buff_idx - self.last_seen
+    #         if n_new_data == 0:
+    #             self.processing = False
+    #             return
+    #     else:
+    #         n_new_data = data.shape[-1]
+    #     self.last_seen = current_buff_idx
+
+    #     frame_id = self.frame_counter
+    #     self.frame_counter += 1
+
+    #     channel_configs = [self.remover_options.get_current_config(i) for i in range(len(self.channels))]
+    #     windows = [
+    #             cfg.get("process_window", None)
+    #             for cfg in channel_configs
+    #             if cfg is not None
+    #         ]
+
+    #     max_window = max(windows) if windows else data.shape[1]
+    #     data = data[:, -max_window:]
+    #     t = t[-max_window:]
+
+    #     args = [
+    #         (self._partial_fct, data[d], t, channel_configs[d], d, frame_id, n_new_data)
+    #         for d in range(len(channel_configs))
+    #     ]
+    #     if len(args) == 1:
+    #         self._on_process_done(self._process_worker(*args[0]))
+    #     else:
+    #         for d in range(len(args)):
+    #             # self._on_process_done(self._process_worker(*args[d]))
+    #             self.pool.apply_async(
+    #                 self._process_worker,
+    #                 args=args[d],
+    #                 callback=self._on_process_done,
+    #             )
+
+    @staticmethod
+    def _process_worker(fct, data, t, process_args, idx, n_new_data):
+        if process_args is None:
+            return data[-n_new_data:], t[-n_new_data:], idx
+
+        process_window = process_args.get("process_window", None)
+        if data.shape[-1] < process_window:
+            return data[-n_new_data:], t[-n_new_data:], idx
+
+        process_args["notch_filter"] = "quality_factor" in process_args
+        res = fct(data=data[-process_window:], **process_args)
+        return res[0][-n_new_data:], t[-n_new_data:], idx
 
     def _on_process_done(self, result):
-        res, idx = result
-        self.plot.update_data(res)
-        pass
+        res, t, idx, frame_id = result
+        if frame_id not in self.frames:
+            self.frames[frame_id] = {
+                "data": np.full((len(self.channels) + 1, res.shape[-1]), np.nan),
+                "count": 0,
+            }
+            self.frames[frame_id]["data"][0, :] = t
 
-    def init_stream(self, display_window):
-        n_process = mp.cpu_count() - 2 if mp.cpu_count() > 2 else 1
-        self.ctx = mp.get_context("spawn")
-        # self.pool = self.ctx.Pool(processes=n_process)
-        # self.stream_widget.bridge.data_received.connect(self.update_data)
-        # self.events = [mp.Event() for _ in channels]
-        self.data_queues = [self.ctx.Queue() for _ in self.channels]
-        self.processing_args = [self.ctx.Queue() for _ in self.channels]
-        # self.remover_options.new_stream(self.processing_args)
-        time = np.linspace(0, display_window / self.acquisition_rate, display_window)
+        self.frames[frame_id]["data"][idx + 1] = res
+        self.frames[frame_id]["count"] += 1
+
+        if self.frames[frame_id]["count"] == len(self.channels):
+            full_frame = self.frames.pop(frame_id)["data"]
+            # self.plot.append_clean(full_frame[1:], full_frame[0])
+            self.tmp_processed.append(full_frame)
+            self.processing = False
+
+    def get_last_processed(self):
+        last_proc = self.tmp_processed
+        self.tmp_processed = []
+        self.last_taken = True
+        return last_proc
+
+    def init_stream(self, display_window, queue_process=None, is_running_event=None):
+        time = np.arange(0, display_window)
+        self.queue_process = queue_process
+        self.is_running_event = is_running_event
+        if len(self.channels) > 1:
+            self.queue_plot = [mp.Queue() for _ in range(self.n_process)]
+            self.process_args_event = [mp.Event() for _ in range(self.n_process)]
+            self.queue_process_args = [mp.Queue() for _ in range(self.n_process)]
+            self.channels_mapping = {i: [] for i in range(self.n_process)}
+            for i in range(len(self.channels)):
+                self.channels_mapping[i % self.n_process].append(i)
+        else:
+            self.n_process = 1
+        self.parent.log_box.log(f"Starting stream with {self.n_process} processes...")
+        self.process_buffer = [CircularBuffer(1, display_window) for _ in range(len(self.channels))]
         self.fft_freqs = rfftfreq(display_window, 1 / self.acquisition_rate)
         self.display_options.set_file_params(self.channels)
+        self.remover_options.new_stream(self.channels, self.process_args_event, self.queue_process_args)
         self.plot.initialize_data(
             self.stream_widget.server.buffer,
             time,
             self.channels,
-            display_window
+            display_window,
+            self.queue_plot,
+            self.is_running_event,
         )
         self.parent.toolbar.enable_filter_menu()
         self.parent.toolbar.radio_svd_filter_button.setEnabled(True)
         self.parent.toolbar.radio_notch_filter_button.setEnabled(False)
         self.update_filter("notch")
-        self.timer.start(int(1000 // self.process_rate))
+
+        # self.ctx = mp.get_context("spawn")
+        # self.pool = self.ctx.Pool(processes=n_process)
+        self.running = True
+        Thread(target=self.start_processing, daemon=True).start()
+
+    def start_processing(self):
+        partial_fct = partial(
+            self.remover_options.remover._remove_artifact_from_windows,
+            return_dict=False,
+            data_rate=self.acquisition_rate,
+            offline=False,
+        )
+        self.processes = []
+        for i in range(len(self.queue_process)):
+            p = mp.Process(
+                target=StreamProcessingWidget.process,
+                args=(
+                    partial_fct,
+                    self.queue_process[i],
+                    self.queue_plot[i],
+                    self.process_args_event[i],
+                    self.queue_process_args[i],
+                    self.process_buffer[i],
+                    self.is_running_event,
+                ),
+            )
+            p.start()
+            self.processes.append(p)
+        for p in self.processes:
+            p.join()
+
+        # while self.running:
+        #     tic = time.perf_counter()
+        #     if not self.processing:
+        #         self.processing = True
+        #         self.process()
+        #     time_to_process = time.perf_counter() - tic
+        #     time_to_sleep = 1 / self.process_rate - time_to_process
+        #     if time_to_sleep > 0:
+        #         time.sleep(time_to_sleep)
+        # if count < n_loop:
+        #     count += 1
+        #     total_time += time_to_process
+        # elif count >= n_loop and not self.long_process_warning:
+        #     if total_time / count > 1/self.process_rate:
+        #         self.parent.logbox.log("WARNING: You ask for a processing rate which is not reachable by this configuration."
+        #         f" The processing rate will be limited to the minimum processing time possible ({1/ (total_time/count)}).")
+        #         self.long_process_warning = True
 
     @property
     def acquisition_rate(self):
@@ -373,28 +536,34 @@ class StreamProcessingWidget(ProcessingWidget):
     def channels(self):
         return self.stream_widget.channels
 
-    def update_data(self, data):
-        if not self.plot.is_streaming:
-            self.plot.is_streaming = True
-        # self.last_n_arrived += data.shape[-1]
-        # self.counter += data.shape[-1]
+    def update_data(self, data_shape):
+        if not self.once_updated:
+            self.parent.log_box.log("Receiving data from the client and starting the stream...")
+            self.last_n_arrived += data_shape[-1]
+            self.plot.start_plotting()
+            self.once_updated = True
+            self.is_running_event.set()
+        else:
+            data, t = self.stream_widget.server.buffer.get()
+            [self.queue_process[i].put((data[chan], t, i)) for i, chan in self.channels_mapping.items()]
 
     def stop_processing(self):
         self.timer.stop()
-        self.pool.terminate()
-        self.pool.join()
+        # self.pool.terminate()
+        # self.pool.join()
         self.processing = False
 
     def update_filter(self, name="notch"):
-        if self.timer.isActive():
-            self.stop_processing()
+        # if self.timer.isActive():
+        #     self.stop_processing()
         self.remover_options.update_filter(name)
         self.plot.update_filter(name)
-        self.plot.update_config_button(self.remover_options.get_current_config())
+        # self.plot.update_config_button(self.remover_options.get_current_config())
         processed = self.get_processed_channels()
         if processed is not None:
             self.display_options.display_processed_btn.setEnabled(True)
         else:
             self.display_options.display_processed_btn.setEnabled(False)
         self.remover_options.show_config("")
-    
+        # if self.streaming_data:
+        #     self.start_processing()
