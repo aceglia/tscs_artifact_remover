@@ -101,9 +101,10 @@ if __name__ == "__main__":
     
     path_file = r"D:\Documents\Programmation\tscs_artifact_remover\004_TN-SCI_002.txt"
     path_file = r"D:\Downloads\T1_008_arm_sa_002.mat"
+    path_file = r"D:\Documents\Programmation\tscs_artifact_remover\test_data\test001.txt"
     # path_file = r"test001.txt"
     # path_file = r'D:\Documents\Programmation\tscs_artifact_remover\test_data\007Loc_sa_20_Avec000.mat'
-    path_file =  r"D:\Documents\Programmation\tscs_artifact_remover\test_data\clean_walk_testwith_artifacts_synth_80_steps.bio"
+    # path_file =  r"D:\Documents\Programmation\tscs_artifact_remover\test_data\clean_walk_testwith_artifacts_synth_80_steps.bio"
     loader = DataLoader(path_file, center=True)
     loader._apply_stack_batch()
     # test_buffer_main(loader.init_data, chunk_size=20)

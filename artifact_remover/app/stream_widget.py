@@ -38,7 +38,7 @@ class StreamWidget(QWidget):
         # self.bridge.data_received.emit(shape)
         if not self.is_running_event.is_set():
             self.is_running_event.set()
-        [self.queue_process[i].put_nowait((d[chan], t, i)) for i, chan in self.channels_mapping.items()]
+        [self.queue_process[i].put_nowait((d[chan], t, chan)) for i, chan in self.channels_mapping.items()]
 
     def _init_layout(self):
         self.play_button = QPushButton("Play")
@@ -89,15 +89,20 @@ class StreamWidget(QWidget):
         self.play_button.setEnabled(False)
         if not self.paused:
             self.parent.parent.log_box.log(f"Launching the stream at: {self.address}:{self.port} waiting for a client...")
+            self.n_process = self.n_process if len(self.channels) > 1 else 1
+            self.n_process = min(self.n_process, len(self.channels))
             self.channels_mapping = {i: [] for i in range(self.n_process)}
             for i in range(len(self.channels)):
                 self.channels_mapping[i % self.n_process].append(i)
-            self.queue_process = [ClearableQueue(maxsize=20) for _ in range(self.n_process)]
+            self.queue_process = [ClearableQueue(maxwrite=2000) for _ in range(self.n_process)]
             self.is_running_event = mp.Event()
             thread = threading.Thread(target=self._run_asyncio, daemon=True)
             thread.start()
-            # self.bridge.data_received.connect(self.parent.update_data)
-            self.parent.init_stream(self.display_window, queue_process=self.queue_process, is_running_event=self.is_running_event)
+            self.parent.init_stream(self.display_window, queue_process=self.queue_process, is_running_event=self.is_running_event, channels_mapping=self.channels_mapping)
+        else:
+            self.parent.set_paused(False)
+            self.paused = False
+
 
     def _run_asyncio(self):
         self.server = AsyncTCPServer(self.address, self.port, buffer_length=self.display_window)
@@ -114,6 +119,7 @@ class StreamWidget(QWidget):
         self.play_button.setEnabled(True)
         self.pause_button.setEnabled(False)
         self.paused = True
+        self.parent.set_paused(True)
 
     def _set_channels(self):
         popup = ChannelsPopup(channels=self.channels)

@@ -5,46 +5,72 @@ from multiprocessing import RawArray, RawValue, Queue
 import time
 
 
-class ClearableQueue(Queue):
-    def __init__(self, maxsize=1000):
-        super().__init__(maxsize=maxsize)
+class ClearableQueue:
+    def __init__(self, maxwrite=1000, name=None):
+        self.queue = Queue()
+        self.maxwrite = maxwrite
+        self.total_written = 0
+        self.name = name
     
     def clear(self):
-        while not self.empty():
-            try:
-                self.get_nowait()
-            except Exception:
-                break
-        
-    def put_nowait(self, obj):
-        try:
-            super().put_nowait(obj)
-        except self.Full:
-            self.clear()
-            super().put_nowait(obj)
-
-    def get_stacked(self):
-        data, time, idx = [], [], []
-        n_read = 0
+        print(f"Queue {self.name} reached maxwrite limit, clearing the queue.")
         while True:
             try:
-                data_tmp, time_tmp, idx_tmp = self.get_nowait()
-                data.append(data_tmp)
-                time.append(time_tmp)
-                idx.append(idx_tmp)
-                n_read += 1
-            except queue.Empty:
+                self.queue.get_nowait()
+            except Exception:
                 break
-        if n_read == 0:
+        self.total_written = 0
+        
+    def put_nowait(self, obj):
+        # if self.total_written >= self.maxwrite:
+        #     self.clear()
+        try:
+            # if self.name == 'plot':
+            #     print(f"Putting data into queue {self.name}, data shape: {obj[0].shape} for channel {obj[2]}")
+            self.queue.put_nowait(obj)
+            # self.total_written += 1
+        except Exception:
+            pass
+        # print(f"Queue {self.name} size: {self.total_written}")
+
+    def get_stacked(self):
+        data_chunks = []
+        time_chunks = []
+        idx_chunks = []
+        while True:
+            try:
+                d, t, idx = self.queue.get_nowait()
+                self.total_written -= 1
+                # if self.name == 'plot':
+                    # print(f"Getting data from queue {self.name}, data shape: {d.shape} for channel {idx}")
+                data_chunks.append(d)  
+                time_chunks.append(t) 
+                idx_chunks.append(idx)
+            except Exception:
+                break
+        if not data_chunks:
             return None
-        data_stacked = {}
-        unique_idx = np.unique(idx)
-        for i in unique_idx:
-            idx_tmp = np.argwhere(idx == i)
-            data_i = np.hstack(np.array(data)[idx_tmp])
-            time_i = np.hstack(np.array(time)[idx_tmp])
-            data_stacked[i] = (data_i, time_i)
-        return data_stacked
+        # print(f"Queue {self.name} size: {self.total_written}")
+        # self.total_written = max(self.total_written, 0)
+        data_all = np.concatenate(data_chunks, axis=-1)
+        t_all = np.concatenate(time_chunks)
+        idx_all = idx_chunks[0]
+        out = {}
+        for ch in np.unique(idx_all):
+            mask = idx_all == ch
+            d_ch = data_all[mask]
+            d_ch = d_ch[None] if d_ch.ndim == 1 else d_ch
+            out[ch] = (d_ch, t_all)
+        return out
+
+    def get_nowait(self):
+        try:
+            data = self.queue.get_nowait()
+            self.total_written -= 1
+            self.total_written = max(0, self.total_written)
+            return data
+        except Exception:
+            return None
 
 def dispatch_queue(results):
     data, t, total_samples, idx = results

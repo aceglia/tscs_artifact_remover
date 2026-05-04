@@ -114,11 +114,13 @@ class OptionWidget(QWidget):
         #     self.parent.log_box.log("WARNING: Invalid configuration. Please check the parameters.")
         #     return
         if len(ensure_list(process_arguments["channel_idxs"])) == 0:
-            self.parent.log_box.log("Unable to process data. Please select a channel to process first.")
+            self.parent.parent.log_box.log("Unable to process data. Please select a channel to process first.")
             # self.process_button.setEnabled(False)
         if not self.streaming:
             self.parent.process(**process_arguments)
-            
+        else:
+            [(queue.put_nowait(process_arguments), event.set()) for queue, event in zip(self.queue, self.event_log)]
+            # self.parent.parent.log_box.log(f"Processing data with parameters: {process_arguments}")
         list_empty = (
             [None] * len(self.channels)
             if f"Frame_{self.current_frame}" not in self.process_arguments
@@ -536,5 +538,5 @@ class StreamRemover(Remover):
         self.remover = RtArtefactRemover()
         self.enable()
         for options in [self.notch_options, self.svd_options]:
-            options.init(channels, len(channels), streaming=True, events_log=events, queue=queue_args)
+            options.init(channels, len(channels), streaming=True, event_log=events, queue=queue_args)
         

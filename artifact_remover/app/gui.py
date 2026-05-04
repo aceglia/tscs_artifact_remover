@@ -147,9 +147,6 @@ class GUI(QMainWindow):
     def go_offline_mode(self):
         self.toolbar.go_offline_button.setEnabled(False)
         self.toolbar.go_stream_button.setEnabled(True)
-        # replace stream widget by processing widget
-        if self.stream_processing_widget.timer.isActive():
-            self.stream_processing_widget.stop_processing()
         self.stack.setCurrentWidget(self.processing_widget)
 
     def notch_selected(self):
