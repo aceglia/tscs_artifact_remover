@@ -359,7 +359,7 @@ class StreamPlotter(Plotter):
             return
         raw, t_raw = self.adjust_to_wind((raw, t_raw), type="raw")
         
-        process_data = self.adjust_to_wind(process_data, type="clean")
+        process_data = self.adjust_to_wind(process_data, type="clean", t_raw=t_raw)
         self.setUpdatesEnabled(False)
         for plot in self.plot_list:
             if plot.idx in visible_idx and plot.visible is False:
@@ -387,7 +387,7 @@ class StreamPlotter(Plotter):
                 self.append_clean(dic_tmp[i][0], dic_tmp[i][1], i)
         return {ch: self.get_clean(idx=ch) for ch in visible_channels}
 
-    def adjust_to_wind(self, data, type="raw"):
+    def adjust_to_wind(self, data, type="raw", t_raw=None):
         if type == "raw":
             data, t = data
             if t is not None and len(t) > 0 and np.isfinite(t[-1]):
@@ -410,19 +410,17 @@ class StreamPlotter(Plotter):
                     self._current_block = block_idx
 
         if type == "raw":
-            t_start_idx = np.argwhere(np.isclose(t, self.current_start_time, atol=1e-05))
-            if len(t_start_idx) == 0:
-                return (np.empty((data.shape[0], 0)), np.empty(0))
-            data = data[:, t_start_idx[0][0]:]
-            t = t[t_start_idx[0][0]:]
+            t_start_idx = np.searchsorted(t, self.current_start_time)
+            data = data[:, t_start_idx:]
+            t = t[t_start_idx:]
             data = (data, t)
         elif type == "clean":
             for idx in data.keys():
-                start_idx_tmp = np.argwhere(np.isclose(data[idx][1], self.current_start_time, atol=1e-05))
-                if len(start_idx_tmp) == 0:
+                if data[idx][1][-1] <= self.current_start_time:
                     data[idx] = (np.empty((data[idx][0].shape[0], 0)), np.empty(0))
                     continue
-                data[idx] = (data[idx][0][:, start_idx_tmp[0][0] :], data[idx][1][start_idx_tmp[0][0] :])
+                start_idx_tmp = np.searchsorted(data[idx][1], self.current_start_time)
+                data[idx] = (data[idx][0][:, start_idx_tmp:], data[idx][1][start_idx_tmp:])
         else:
             raise ValueError(f"Type {type} not recognized. Must be 'raw' or 'clean'.")
         return data
