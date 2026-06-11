@@ -172,7 +172,9 @@ cython_debug/
 
 test_data/
 _pycache.json
-
+build/
+cpp_package/external/
+cpp_package/build/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
