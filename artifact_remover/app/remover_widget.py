@@ -120,7 +120,7 @@ class OptionWidget(QWidget):
             self.parent.process(**process_arguments)
         else:
             [(queue.put_nowait(process_arguments), event.set()) for queue, event in zip(self.queue, self.event_log)]
-            # self.parent.parent.log_box.log(f"Processing data with parameters: {process_arguments}")
+            self.parent.parent.log_box.log(f"Processing data with parameters: {process_arguments}")
         list_empty = (
             [None] * len(self.channels)
             if f"Frame_{self.current_frame}" not in self.process_arguments
@@ -232,7 +232,7 @@ class NotchOptions(OptionWidget):
         self.input_wind = QLineEdit()
         self.input_wind.setText(str(self.process_window))
         self.input_wind.textChanged.connect(self.set_process_window)
-        layout.addWidget(QLabel("Process window lenght:"), 4, 0, 1, 1)
+        layout.addWidget(QLabel("Window length:"), 4, 0, 1, 1)
         layout.addWidget(self.input_wind, 5, 1, 1, 2)
         # layout.addWidget(self.wind_to_proc_label, 6, 0, 1, 2)
         # layout.addWidget(self.window_to_process_input, 6, 0, 1, 2)
@@ -288,7 +288,7 @@ class SVDOptions(OptionWidget):
     def _init_layout(self):
         layout = QGridLayout()
         layout.addWidget(QLabel("<b><font size=5>SVD Remover Options</font></b>"), 0, 0, 1, 3, Qt.AlignCenter)
-        layout.addWidget(QLabel("Process window lenght:"), 1, 0, 1, 2)
+        layout.addWidget(QLabel("Window length:"), 1, 0, 1, 2)
 
         self.input_wind = QLineEdit()
         self.input_wind.setText(str(self.process_window))
@@ -313,13 +313,13 @@ class SVDOptions(OptionWidget):
         layout.addWidget(self.input_delay, 3, 1, 1, 1)
 
 
-        layout.addWidget(QLabel("Select threshold:"), 4, 0, 1, 2)
+        layout.addWidget(QLabel("Threshold:"), 4, 0, 1, 2)
         self.input_factor = QLineEdit()
         self.input_factor.setText(str(self.factor))
         self.input_factor.textChanged.connect(self.set_factor)
         layout.addWidget(self.input_factor, 4, 1, 1, 1)
 
-        layout.addWidget(QLabel("Select frequency bounds:"), 5, 0, 1, 1)
+        layout.addWidget(QLabel("Frequency bounds:"), 5, 0, 1, 1)
         self.input_low_freq = QLineEdit()
         self.input_low_freq.setText(str(self.freq_bounds[0]))
         self.input_low_freq.textChanged.connect(self.set_low_freq)

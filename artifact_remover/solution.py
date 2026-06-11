@@ -63,7 +63,7 @@ class Solution:
         try:
             return np.stack([d[key] for d in data])
         except KeyError as e:
-            raise KeyError(f"Missing key '{key}' in decomposition output") from e
+            print(f"WARNING: Missing key '{key}' in decomposition output")
 
     def from_signal_decomposition(self, decomposition_dict: dict, initial_data_shape: tuple=None)->None:
         """

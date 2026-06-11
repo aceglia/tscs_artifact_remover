@@ -105,6 +105,11 @@ class ArtifactGenerator:
                     random_dict[key] = get_from_range(value)
         return random_dict
 
+    def _sample_to_frequency(self, signal, duration, fs):
+        duration = self._get_random_params(duration=duration)["duration"]
+        target_points = np.round(fs * duration, 0).astype(int)
+        return np.interp(np.linspace(0, 1, target_points), np.linspace(0, 1, len(signal)), signal)
+
     def generate_artifact(
         self,
         stimulation_frequency:float=30,
@@ -236,7 +241,7 @@ class ArtifactGenerator:
         )
 
         artifacts = modulator.apply_modulation(artifact_template)
-        signal_with_artifacts = signal + artifacts
+        signal_with_artifacts = np.asanyarray(signal + artifacts).astype(np.float64)
         self.signal_with_artifacts = signal_with_artifacts.reshape(init_shape)
         if init_dim == 1:
             self.signal_with_artifacts = self.signal_with_artifacts[0, :]

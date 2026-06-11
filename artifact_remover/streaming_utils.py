@@ -5,70 +5,6 @@ from artifact_remover.io_utils import DataLoader
 import numpy as np
 
 
-class CircularBuffer:
-    def __init__(self, n, W, n_batch=1, dtype=np.float32):
-        self.W = W
-        self.ring = np.zeros((n_batch, n, W), dtype=dtype)
-        self.linear = np.zeros((n_batch, n, W), dtype=dtype)
-        self.idx = 0
-        self.full = False
-
-    @property
-    def shape(self):
-        return self.linear.shape
-
-    def append(self, x):
-        """
-        x shape: (n_batch, n, w)
-        """
-        w = x.shape[-1]
-        end = self.idx + w
-
-        if end <= self.W:
-            self.ring[:, :, self.idx : end] = x
-        else:
-            first = self.W - self.idx
-            self.ring[:, :, self.idx :] = x[:, :, :first]
-            self.ring[:, :, : w - first] = x[:, :, first:]
-
-        self.idx = end % self.W
-        self.full |= end >= self.W
-
-    def get(self):
-        if self.full:
-            k = self.idx
-            self.linear[:, :, : self.W - k] = self.ring[:, :, k:]
-            self.linear[:, :, self.W - k :] = self.ring[:, :, :k]
-        else:
-            self.linear[:, :, : self.idx] = self.ring[:, :, : self.idx]
-        return self.linear
-
-
-import numpy as np
-
-
-class RealTimeHankel:
-    def __init__(self, n_rows, n_cols, dtype=np.float64):
-        self.n_rows = n_rows
-        self.n_cols = n_cols
-        self.hankel = np.zeros((n_rows, n_cols), dtype=dtype)
-        self.buffer = CircularBuffer(
-            n_cols,
-        )
-
-    def update(self, new_sample):
-        self.buffer.append(new_sample)
-        if len(self.buffer) >= self.n_rows + self.n_cols - 1:
-            # Shift matrix left and update last column
-            self.hankel[:, :-1] = self.hankel[:, 1:]
-            # Fill last column with new data
-            start_idx = len(self.buffer) - self.n_rows
-            self.hankel[:, -1] = list(self.buffer)[start_idx:]
-
-    def get_matrix(self):
-        return self.hankel.copy()
-
-
 class DataStreamer:
     def __init__(self, data=None, offline=True, chunk_size=None, **data_loader_kwargs):
         self.current_index = 0
@@ -82,8 +18,14 @@ class DataStreamer:
     def load_data(self, data, data_loader_kwargs):
         self.data_loader = DataLoader(data,ignore_filtering=True, **data_loader_kwargs)
         self.data_loader._apply_stack_batch()
-        self.init_data = self.data_loader.init_data
+        # self.init_data = self.data_loader.init_data
         self.is_data_loaded = True
+
+    @property
+    def init_data(self):
+        if not self.is_data_loaded:
+            raise ValueError("Data not loaded.")
+        return self.data_loader.init_data
 
     @property
     def num_chunks(self):

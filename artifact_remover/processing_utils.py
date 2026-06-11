@@ -227,11 +227,13 @@ def robust_max_percentile(x: np.ndarray, percent: float = 99.9) -> np.ndarray:
     """
     # return np.percentile(x, q, axis=-1)
     x = np.asarray(x)
-    med = np.median(x)
-    mad = np.median(np.abs(x - med)) + 1e-12
-    mask = x < med + 25 * mad
-    x_clean = x[mask]
-    return np.percentile(x_clean, percent)
+    med = np.median(x, axis=-1, keepdims=True)
+    mad = np.median(np.abs(x - med), axis=-1, keepdims=True) + 1e-12
+    mask = x < med + 3 * mad
+    if not np.any(mask):
+        return np.percentile(x, percent, axis=-1)
+    x_clean = np.delete(x, np.argwhere(~mask), axis=-1)
+    return np.percentile(x_clean, percent, axis=-1)
 
 
 def line_length(data: np.ndarray, w: Optional[int] = None) -> np.ndarray:
@@ -250,7 +252,9 @@ def line_length(data: np.ndarray, w: Optional[int] = None) -> np.ndarray:
     np.ndarray
         Normalized line length.
     """
-    ll = np.sum(np.abs(np.diff(data)), axis=-1)
+    # use central diff
+    diff = data[..., 2:] - data[..., :-2]
+    ll = np.sum(np.abs(diff), axis=-1)
     return ll / (np.std(data) * data.shape[-1])
 
 
@@ -270,6 +274,9 @@ def kurtosis_value(data: np.ndarray, w: int = 15) -> np.ndarray:
     np.ndarray
         Average kurtosis over windows.
     """
+    non_zero_idx = np.argwhere(data == 0)
+    if len(non_zero_idx) > 0:
+        data = np.delete(data, non_zero_idx, axis=-1)
     stds = np.stack([kurtosis(data[..., i : i + w], axis=-1) for i in range(0, data.shape[-1] - w, w)])
     return np.mean(stds, axis=0)
 
@@ -476,7 +483,7 @@ class Quality:
         if ground_truth is not None:
             self.ground_truth = True
         data_list = [raw, processed, ground_truth]
-        data_quality = ["raw_data_quality", "clean_data_quality", "clean_data_quality"]
+        data_quality = ["raw_data_quality", "clean_data_quality", "ground_truth_quality"]
         indices = self._get_indices(idx, channel)
         for qual, data, per in zip(data_quality, data_list, percentile):
             if data is None:
@@ -488,6 +495,6 @@ class Quality:
                 median_frequency(data, fs, return_fft=True, fft_freq=fft_freqs) if (2 in analysis or 3 in analysis) else np.nan
             )
             quality[(3, *indices[:-1])] = (
-                robust_max_percentile(fft[: int(np.argwhere(fft_freqs > maxw)[0])], per) if 3 in analysis else np.nan
+                robust_max_percentile(fft[..., : int(np.argwhere(fft_freqs > maxw)[0])], per) if 3 in analysis else np.nan
             )
         return self.get_quality(idx, channel)

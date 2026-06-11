@@ -2,9 +2,8 @@ from functools import partial
 import json
 import time
 
-from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout, QHBoxLayout
+from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout
 from PyQt5.QtCore import Qt, QThreadPool, QTimer
-from threading import Thread
 
 import numpy as np
 import multiprocessing as mp
@@ -12,7 +11,7 @@ from scipy.fft import rfftfreq
 import scipy.io as sio
 
 from biosiglive.streaming.utils import CircularBuffer
-from .stream_utils import dispatch_queue, empty_queue, get_config_by_idx, ClearableQueue
+from .stream_utils import ClearableQueue
 from .remover_widget import StreamRemover, OfflineRemover
 from ..rt_automatic_remover import RtArtefactRemover
 from .display_options import StreamDisplayWidget, OfflineDisplayWidget
@@ -356,12 +355,12 @@ class StreamProcessingWidget(ProcessingWidget):
                 process_buffer[ch].append(data[ch][0], data[ch][1])
 
             if process_args_event.is_set():
-                channel_configs = queue_process_args.get_nowait()
+                channel_configs = queue_process_args.get(timeout=0.02)
                 process_args_event.clear()
                 for ch in idxs:
                     if ch in channel_configs["channel_idxs"]:
                             channel_configs_glob[ch] = channel_configs
-                print('process: received new config for channel', ch, channel_configs_glob[ch])
+                # print('process: received new config for channel', ch, channel_configs_glob[ch])
 
 
             if channel_configs is not None:
@@ -416,7 +415,7 @@ class StreamProcessingWidget(ProcessingWidget):
         self.is_running_event = is_running_event
         self.channels_mapping = channels_mapping
         self.n_process = self.n_process if len(self.channels) > 1 else 1
-        self.n_process = min(self.n_process, len(self.channels))
+        self.n_process = min(self.n_process, int(np.ceil(len(self.channels) / 2)))
         self.queue_plot = {i: ClearableQueue(maxwrite=2000, name='plot') for i in range(len(self.channels))}
         self.process_args_event = [mp.Event() for _ in range(self.n_process)]
         self.queue_process_args = [ClearableQueue(maxwrite=1) for _ in range(self.n_process)]

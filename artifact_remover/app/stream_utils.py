@@ -21,6 +21,9 @@ class ClearableQueue:
                 break
         self.total_written = 0
         
+    def get(self, timeout=None):
+        return self.queue.get(timeout=timeout)
+
     def put_nowait(self, obj):
         # if self.total_written >= self.maxwrite:
         #     self.clear()

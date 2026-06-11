@@ -1,6 +1,7 @@
 from functools import partial
 
-from artifact_remover.streaming_utils import DataStreamer, CircularBuffer
+from artifact_remover.streaming_utils import DataStreamer
+from biosiglive.streaming.utils import CircularBuffer
 from artifact_remover.automatic_remover import ArtefactRemover
 from artifact_remover.solution import Solution
 from artifact_remover.processing_utils import Quality
@@ -35,17 +36,18 @@ class RtArtefactRemover(ArtefactRemover):
             self.to_evaluate_buffer.append(np.hstack([data, np.zeros_like(data)]))
         else:
             self.buffer.append(data)
-            data = self.buffer.get()
+            data, _ = self.buffer.get()
             data_tmp = self.streamer.data_loader.apply_filtering(data, offline=False)
             if process_kwargs["notch_filter"]:
                 process_kwargs["offline"] = False
             process_kwargs["rejected_idx"] = None if self.idx % self.update_svd_every == 0 else self.last_rejected
             output = self._remove_artifact_from_windows(data_tmp, **process_kwargs)
-            if process_kwargs["notch_filter"]:
-                output = output[0]
+            # if process_kwargs["notch_filter"]:
+                # output = output[0]
+            output = output[0]
             # self.to_evaluate_buffer.append(np.hstack([data, output[None, None]]))
             if self.offline:
-                self.output[:, 0, self.idx : self.idx + self.streamer.chunk_size] = output[-self.streamer.chunk_size :][
+                self.output[:, self.idx : self.idx + self.streamer.chunk_size] = output[-self.streamer.chunk_size :][
                     None, :
                 ]
             # if self.to_evaluate_buffer.full:
@@ -93,9 +95,10 @@ class RtArtefactRemover(ArtefactRemover):
             data = self.get_init_signal()
             if not isinstance(channel_idxs, list):
                 channel_idxs = [channel_idxs]
-            data = data[:, channel_idxs, :] if channel_idxs is not None else data
-            data = data[:, :, data_window[0] : data_window[1]] if data_window is not None else data
-            self.streamer.init_data = data
+            data = data[channel_idxs, :] if channel_idxs is not None else data
+            data = data[:, data_window[0] : data_window[1]] if data_window is not None else data
+            self.streamer.data_loader.init_data = data
+            # self.streamer.init_data = data
         self.output = np.zeros_like(self.streamer.init_data)
         self.streamer.chunk_size = chunk_size if chunk_size else self.streamer.chunk_size
         import time
@@ -121,18 +124,22 @@ class RtArtefactRemover(ArtefactRemover):
             fft_freqs=fft_freqs,
         )
         tic = time.time()
+        count = 0
         for i in range(self.streamer.num_chunks):
             _, data_chunk = self.streamer.get_next_chunk(self.streamer.chunk_size)
+            if data_chunk is None:
+                break
             self.process_chunck(data_chunk, **process_kwargs)
             self.idx += self.streamer.chunk_size
+            count += 1
 
         print(
             "Total time to process data:",
             time.time() - tic,
             "its around: ",
-            np.round(((time.time() - tic) / self.streamer.num_chunks) * 1000, 2),
+            np.round(((time.time() - tic) / count) * 1000, 2),
             "ms",
-            np.round(1 / ((time.time() - tic) / self.streamer.num_chunks), 2),
+            np.round(1 / ((time.time() - tic) / count), 2),
             "FPS",
         )
         return self.output

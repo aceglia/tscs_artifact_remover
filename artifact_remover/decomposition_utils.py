@@ -1,7 +1,7 @@
 import numpy as np
 import scipy
 from scipy.fft import rfft, rfftfreq
-from fbpca import pca
+# from fbpca import pca
 from numpy.lib.stride_tricks import as_strided
 
 
@@ -114,7 +114,7 @@ def compute_svd(
             U, S, Vh = U[:, :nb_principal_components], S[:nb_principal_components], Vh[:nb_principal_components]
         if epsilon is not None:
             idx = np.argwhere(S > epsilon).flatten()
-            U, S, Vh = U[idx], S[idx], Vh[idx]
+            U, S, Vh = U[:, idx], S[idx], Vh[idx]
 
     return U, S, Vh, hankel
 
@@ -167,65 +167,6 @@ def peak_energy_ratio(X: np.ndarray) -> np.ndarray:
     w = int(X.shape[-1] * 5 / 100)
     return np.max(P, axis=-1) / mean_around_row_max(P, w)
 
-
-def peak_energy_ratio_log(X: np.ndarray) -> np.ndarray:
-    """
-    Compute log-scaled peak energy ratio.
-
-    Parameters
-    ------------
-    X : np.ndarray
-        Input array.
-
-    Returns
-    --------
-    np.ndarray
-        Log peak energy ratios (in dB).
-    """
-    P = np.abs(X) ** 2
-    return 10 * np.log(np.max(P, axis=-1) / np.mean(P, axis=-1))
-
-
-def bound_freq(freq: float, lower_bound: float, upper_bound: float) -> bool:
-    """
-    Check if frequency is within bounds.
-
-    Parameters
-    ------------
-    freq : float
-        Frequency value.
-    lower_bound : float
-        Lower frequency bound.
-    upper_bound : float
-        Upper frequency bound.
-
-    Returns
-    --------
-    bool
-        True if within bounds, False otherwise.
-    """
-    return (freq >= lower_bound) & (freq <= upper_bound)
-
-
-def absolute_max(max_value: float, threshold: float) -> bool:
-    """
-    Check if a value is below a threshold.
-
-    Parameters
-    ------------
-    max_value : float
-        Value to compare.
-    threshold : float
-        Threshold value.
-
-    Returns
-    --------
-    bool
-        True if below threshold, False otherwise.
-    """
-    return max_value < threshold
-
-
 def remove_singular_values(
     v: np.ndarray,
     s: np.ndarray,
@@ -268,6 +209,7 @@ def remove_singular_values(
         ratio = peak_ratio / np.max(peak_ratio)
 
         freqs = fft_freqs[np.argmax(all_fft_max, axis=1)]
+        # print(  "max freqs:", freqs)
 
         to_reject = [
             np.argwhere((freqs <= freq_bounds[0]) | (freqs >= freq_bounds[1]))[:, 0],

@@ -90,7 +90,7 @@ class StreamWidget(QWidget):
         if not self.paused:
             self.parent.parent.log_box.log(f"Launching the stream at: {self.address}:{self.port} waiting for a client...")
             self.n_process = self.n_process if len(self.channels) > 1 else 1
-            self.n_process = min(self.n_process, len(self.channels))
+            self.n_process = min(self.n_process, int(np.ceil(len(self.channels) / 2)))
             self.channels_mapping = {i: [] for i in range(self.n_process)}
             for i in range(len(self.channels)):
                 self.channels_mapping[i % self.n_process].append(i)
