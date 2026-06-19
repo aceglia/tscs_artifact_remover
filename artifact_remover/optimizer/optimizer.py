@@ -2,14 +2,17 @@ from functools import partial
 from scipy.fft import rfftfreq
 import multiprocessing as mp
 import numpy as np
-from ..automatic_remover import ArtefactRemover
+from ..automatic_remover import ArtifactRemover
 from ..processing_utils import Quality, ensure_list
 from typing import Union
-import cma
+try:
+    import cma
+except ImportError:
+    cma = None
 
 
 class Optimizer:
-    def __init__(self, artifact_remover: ArtefactRemover, n_processes: int = 1):
+    def __init__(self, artifact_remover: ArtifactRemover, n_processes: int = 1):
         self.n_processes = n_processes
         self.artifact_remover = artifact_remover
         self.quality = Quality()
@@ -37,6 +40,8 @@ class Optimizer:
         lower_bounds = [0.2, 0.3, 0]
         upper_bounds = [0.8, 1, 1.5]
         init = [0.4, 0.45, 0.35]
+        if cma is None:
+            raise ImportError("cma module is required for optimization")
         res, es = cma.fmin2(lambda x: Optimizer.compute_cost(x, fct, data[:10000], quality_fct), init, 0.2, options={'bounds': [lower_bounds, upper_bounds], 'tolfun': 1e-3, 'verb_log': 0, 'maxiter': 80,
         'popsize': 8})
         print(res)

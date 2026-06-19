@@ -13,7 +13,7 @@ import scipy.io as sio
 from biosiglive.streaming.utils import CircularBuffer
 from .stream_utils import ClearableQueue
 from .remover_widget import StreamRemover, OfflineRemover
-from ..rt_automatic_remover import RtArtefactRemover
+from ..rt_automatic_remover import RtArtifactRemover
 from .display_options import StreamDisplayWidget, OfflineDisplayWidget
 from .plot_widget import OfflinePlotter, StreamPlotter
 from .gui_utils import ensure_list, Worker
@@ -341,7 +341,7 @@ class StreamProcessingWidget(ProcessingWidget):
         channel_configs_glob = {i: {} for i in channels_idxs}
         process_buffer = {i: CircularBuffer(1, buff_len) for i in channels_idxs}
         last_t = {i: -np.inf for i in channels_idxs}
-        fct = partial(RtArtefactRemover()._remove_artifact_from_windows, return_dict=False,
+        fct = partial(RtArtifactRemover()._remove_artifact_from_windows, return_dict=False,
             data_rate=acquisition_rate,
             offline=False,)
         runing_event.wait()

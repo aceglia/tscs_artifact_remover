@@ -2,12 +2,12 @@ from functools import partial
 
 from artifact_remover.streaming_utils import DataStreamer
 from biosiglive.streaming.utils import CircularBuffer
-from artifact_remover.automatic_remover import ArtefactRemover
+from artifact_remover.automatic_remover import ArtifactRemover
 from artifact_remover.solution import Solution
 from artifact_remover.processing_utils import Quality
 import numpy as np
 
-class RtArtefactRemover(ArtefactRemover):
+class RtArtifactRemover(ArtifactRemover):
     def __init__(self, data=None, window_size=2000, **data_loader_kwargs):
         super().__init__(None, **data_loader_kwargs)
         self.offline = False if data is None else True

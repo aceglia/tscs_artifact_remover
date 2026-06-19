@@ -1,5 +1,3 @@
-import json
-import queue
 import threading
 
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QDialog, QLabel

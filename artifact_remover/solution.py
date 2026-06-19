@@ -4,13 +4,15 @@ import numpy as np
 
 from artifact_remover.plot_utils import PlotSolution
 from artifact_remover.analysis import Analysis
+from artifact_remover.processing_utils import Quality
 
 
 class Solution:
     """
     Solution object to store the decomposition output and provide methods to plot and analyse it.
     """
-    def __init__(self, data_rate: float=None):
+
+    def __init__(self, data_rate: float = None):
         """
         Initialize the Solution object.
         Parameters:
@@ -27,6 +29,7 @@ class Solution:
         self.is_empty = True
         self.analysis = None
         self.data_rate = data_rate
+        self.ground_truth = None
 
     def _from_dict(self, dict: dict) -> None:
         """
@@ -65,7 +68,7 @@ class Solution:
         except KeyError as e:
             print(f"WARNING: Missing key '{key}' in decomposition output")
 
-    def from_signal_decomposition(self, decomposition_dict: dict, initial_data_shape: tuple=None)->None:
+    def from_signal_decomposition(self, decomposition_dict: dict, initial_data_shape: tuple = None) -> None:
         """
         Initialize the Solution object from the decomposition output.
 
@@ -90,7 +93,7 @@ class Solution:
         self.s_reduced = self.s_reduced.reshape((initial_data_shape[0], initial_data_shape[1], -1))
         self.is_empty = False
 
-    def from_notch_filter(self, out_dict: dict, initial_data_shape: tuple=None)->None:
+    def from_notch_filter(self, out_dict: dict, initial_data_shape: tuple = None) -> None:
         """
         Initialize the Solution object from the notch filter output.
 
@@ -126,7 +129,7 @@ class Solution:
         Raises:
         -------
         RuntimeError: If the class solution do not have attribute: key.
-        
+
         Returns:
         --------
         np.ndarray: The value of the attribute.
@@ -170,22 +173,37 @@ class Solution:
         if show_analysis and self.analysis is None:
             raise RuntimeError("No analysis to show. Please run analyse() method before plotting analysis results.")
         plotter = PlotSolution(signals=signals, fft=fft, singular_values=singular_values, data_rate=self.data_rate)
-        results = self.analysis.get_results() if show_analysis else None
+        results = self.quality if show_analysis else None
         plotter.plot(self._get_all_decomposition_output(), stack_batch=stack_batch, analysis=results)
 
-    def analyse(
-        self,
-        compute_signal_error=False,
-        compute_frequency_analysis=True,
-        groundtruth_signals=None,
-        average_batch=False,
-        average_channels=False,
-    ) -> dict:
-        self.analysis = Analysis(
-            compute_signal_error,
-            compute_frequency_analysis,
-            average_batch=average_batch,
-            average_channels=average_channels,
-            data_rate=self.data_rate,
-        )
-        return self.analysis.process(self.init_data, self.output, gt_signals=groundtruth_signals)
+    def _convert_quality_to_dict(self, quality):
+        dict_to_return = {
+            "kurtosis": [quality[0][0], quality[1][0]],
+            "Line Length": [quality[0][1], quality[1][1]],
+            "Median frequency": [quality[0][2], quality[1][2]],
+            "FFT Amplitude": [quality[0][3], quality[1][3]],
+        }
+        if self.ground_truth is not None:
+            dict_to_return["Kurtosis"].append([quality[2][0]])
+            dict_to_return["Line Length"].append([quality[2][1]])
+            dict_to_return["Median frequency"].append([quality[2][2]])
+            dict_to_return["FFT Amplitude"].append([quality[2][3]])
+
+        return dict_to_return
+
+    def analyse(self, ground_truth=None, **kwargs) -> dict:
+        self.analysis = Quality()
+        self.ground_truth = ground_truth
+        self.quality = self._convert_quality_to_dict(self.analysis.compute_quality(
+            self.init_data, self.output, ground_truth=self.ground_truth, fs=self.data_rate, **kwargs
+        ))
+        return self.quality
+    
+        # self.analysis = Analysis(
+        #     compute_signal_error,
+        #     compute_frequency_analysis,
+        #     average_batch=average_batch,
+        #     average_channels=average_channels,
+        #     data_rate=self.data_rate,
+        # )
+        # return self.analysis.process(self.init_data, self.output, gt_signals=groundtruth_signals)

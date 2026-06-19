@@ -412,6 +412,7 @@ class Quality:
         self.ground_truth_quality = None
         self.quality_mapping = {"kurtosis": 0, "line_length": 1, "mdf": 2, "fft_amplitude": 3}
         self.n_metrics = 4
+        self.initialized = False
         if shape is not None:
             self.init_shape(shape)
 
@@ -424,6 +425,7 @@ class Quality:
         self.raw_data_quality = np.empty(total_shape) * np.nan
         self.clean_data_quality = np.empty(total_shape) * np.nan
         self.ground_truth_quality = np.empty(total_shape) * np.nan
+        self.initialized = True
 
     def _get_quality_per_idx(self, idx=None, channel=None, quality_idx=0):
         raw, clean, truth = self._get_all_quality(idx, channel)
@@ -480,6 +482,8 @@ class Quality:
         """
         Compute multi-metric quality scores for raw/processed/[ground_truth] signals.
         """
+        if not self.initialized:
+            self.init_shape(raw.shape)
         if ground_truth is not None:
             self.ground_truth = True
         data_list = [raw, processed, ground_truth]

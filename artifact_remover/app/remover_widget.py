@@ -12,8 +12,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
-from ..automatic_remover import ArtefactRemover
-from ..rt_automatic_remover import RtArtefactRemover
+from ..automatic_remover import ArtifactRemover
+from ..rt_automatic_remover import RtArtifactRemover
 from .gui_utils import ChannelSelecter, ensure_list
 
 
@@ -451,7 +451,7 @@ class OfflineRemover(Remover):
         super().__init__(parent)
 
     def _init_remover(self, path_file, **kwargs):
-        self.remover = ArtefactRemover(data=path_file, **kwargs)
+        self.remover = ArtifactRemover(data=path_file, **kwargs)
         data_shape = self.remover.data_loader.init_data.shape
         window = 25_000
         if data_shape[-1] > window and data_shape[0] == 1:
@@ -479,12 +479,12 @@ class OfflineRemover(Remover):
         time = np.linspace(0, int(epochs * window) / rate, int(epochs * window))
         self.remover.data_loader.time = time.reshape((epochs, window))
 
-    def set_file(self, file_path, signal_filter=False, center=True, cutoff=[10, 450], order=2):
+    def set_file(self, file_path, data_rate=None, signal_filter=False, center=True, cutoff=[10, 450], order=2):
         self.process_widgets.setCurrentIndex(0)
         self.current_filter = "notch"
         # for options in [self.notch_options, self.svd_options]:
         #     options.__init__(self.parent)
-        self._init_remover(file_path, signal_filter=signal_filter, center=center, cutoff=cutoff, order=order)
+        self._init_remover(file_path, data_rate=data_rate, signal_filter=signal_filter, center=center, cutoff=cutoff, order=order)
         self.enable()
 
     def get_all_data(self):
@@ -535,7 +535,7 @@ class StreamRemover(Remover):
         self.process_widgets.setCurrentIndex(0)
         self.current_filter = "notch"
         self.channels = channels
-        self.remover = RtArtefactRemover()
+        self.remover = RtArtifactRemover()
         self.enable()
         for options in [self.notch_options, self.svd_options]:
             options.init(channels, len(channels), streaming=True, event_log=events, queue=queue_args)

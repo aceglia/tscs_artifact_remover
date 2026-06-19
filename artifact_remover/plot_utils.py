@@ -82,16 +82,16 @@ class PlotSolution:
                 label="Groundtruth Signal",
                 linestyle="--",
             )
+        text = "Signals" if self.analysis is None else "Analysis:\n"
         if self.analysis is not None:
-            text = (
-                "Signals"
-                if self.analysis is None
-                else "Signals - Analysis:"
-                + f" RMSE = {float(self.analysis['rmse'][self.batch_idx, self.channel_idx]):.4f}"
-                + f", Correlation = {float(self.analysis['correlation'][self.batch_idx, self.channel_idx]):.4f}"
-                + f", Lag = {float(self.analysis['lag'][self.batch_idx, self.channel_idx]):.4f}"
-            )
-            ax.set_title(text)
+            for n, name in enumerate(['raw', 'process']):
+                text += (name + ': '
+                    + f" Kurtosis = {float(self.analysis['kurtosis'][n][self.batch_idx, self.channel_idx]):.4f}"
+                    + f", Line Length = {float(self.analysis['Line Length'][n][self.batch_idx, self.channel_idx]):.4f}"
+                    + "\n"
+                )
+            # ax.set_title(text)
+            ax.text(x=0, y=ax.get_ylim()[1], s=text, ha="left", va="top", fontsize=10)
 
     def _plot_fft(self, ax):
         init_fft = self.data["init_data"][self.batch_idx, self.channel_idx, :]
@@ -101,21 +101,30 @@ class PlotSolution:
             if "groundtruth_signals" not in self.data
             else self.data["groundtruth_signals"][self.batch_idx, self.channel_idx, :]
         )
-        mdfs = None
-        if self.analysis is not None:
-            mdfs = [
-                float(self.analysis["mdf_init"][self.batch_idx, self.channel_idx]),
-                float(self.analysis["mdf_processed"][self.batch_idx, self.channel_idx]),
-            ]
-        for data in [init_fft, processed_fft, gt]:
+        # get tab10 colors from matplotlib
+        colors = plt.cm.tab10(np.linspace(0, 1, 10))
+        alpha = [0.5, 1]
+        for d, data in enumerate([init_fft, processed_fft, gt]):
             if data is None:
                 continue
             fft_data = np.abs(rfft(data))
             freq = rfftfreq(data.shape[-1], 1 / self.data_rate)
-            ax.plot(freq, fft_data)
-        text = "FFT" if self.analysis is None else "FFT - Analysis:" + f" MDFs = {mdfs}"
-        ax.set_title(text)
-        ax.legend(["Initial Signal", "Processed Signal", "Groundtruth Signal"])
+            ax.plot(freq, fft_data, color=colors[d], alpha=alpha[d])
+        
+        if self.analysis is not None:
+            for n, name in enumerate(['raw', 'process']):
+                plt.vlines(self.analysis["Median frequency"][n][self.batch_idx, self.channel_idx], 0, ax.get_ylim()[1], color=colors[n], linestyles="--")
+                plt.hlines(self.analysis["FFT Amplitude"][n][self.batch_idx, self.channel_idx], 0, ax.get_xlim()[1], color=colors[n], linestyles="--")
+
+                # text = (name + ': ' +
+                #     + f" Kurtosis = {float(self.analysis['kurtosis'][n][self.batch_idx, self.channel_idx]):.4f}"
+                #     + f", Line Length = {float(self.analysis['line_length'][n][self.batch_idx, self.channel_idx]):.4f}"
+                # )
+            # ax.set_title(text)
+            # ax.text(x=0, y=ax.get_ylim()[1], s=text, ha="left", va="top", fontsize=10)
+
+        ax.set_title("FFT" )
+        ax.legend(["Initial Signal", "Processed Signal"]) #, "Groundtruth Signal"])
 
     def _plot_singular_values(self, ax):
         ax.plot(self.data["s"][self.batch_idx, self.channel_idx, :], label="Initial Signal")

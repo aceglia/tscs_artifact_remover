@@ -2,9 +2,6 @@ import numpy as np
 from artifact_remover.io_utils import DataLoader
 
 
-import numpy as np
-
-
 class DataStreamer:
     def __init__(self, data=None, offline=True, chunk_size=None, **data_loader_kwargs):
         self.current_index = 0

@@ -14,10 +14,10 @@ from artifact_remover.solution import Solution
 from artifact_remover.processing_utils import filter_data, merge_dict
 
 
-class ArtefactRemover:
+class ArtifactRemover:
     def __init__(self, data: str = None, **data_loader_kwargs):
         """
-        Initialize the ArtefactRemover object.
+        Initialize the ArtifactRemover object.
 
         Parameters
         ------------
@@ -176,7 +176,6 @@ class ArtefactRemover:
                 (
                     data[b],
                     hankel_size,
-                    threshold,
                     randomized,
                     post_filter,
                     nb_principal_components,
@@ -188,6 +187,9 @@ class ArtefactRemover:
                     hankel_delay,
                     process_window,
                     data_rate,
+                    freq_bounds,
+                    factor,
+                    fft_freqs,
                 )
                 for b in range(data.shape[0])
             ]
@@ -233,7 +235,7 @@ class ArtefactRemover:
             fft_freqs,
         ) = args
 
-        return ArtefactRemover().perform_window_process(
+        return ArtifactRemover().perform_window_process(
             frequency_peaks=frequency_peaks,
             data=data,
             fs=data_rate,
@@ -281,7 +283,7 @@ class ArtefactRemover:
         dict or ndarray
             Processed result.
         """
-        fct = ArtefactRemover()._perform_notch_filter if notch_filter else ArtefactRemover()._perform_decomposition
+        fct = ArtifactRemover()._perform_notch_filter if notch_filter else ArtifactRemover()._perform_decomposition
         if return_dict:
             init_data = data.copy()
 
