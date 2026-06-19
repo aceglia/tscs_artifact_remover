@@ -9,4 +9,4 @@ dependencies:
 - numpy
 - scipy
 - pyqtgraph
-- PyQt6
+- PyQt5
