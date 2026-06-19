@@ -63,7 +63,7 @@ def test_load_from_dict():
 
     assert array.shape == (2, 4, 100)
     assert channels == ["a", "b", "c", "d"]
-    assert frames == 2
+    assert len(frames) == 2
     assert rate == 2000
 
 
@@ -75,7 +75,7 @@ def test_load_from_dict_default_channel_names():
     array, channels, frames, rate = load_from_dict(data)
 
     assert len(channels) == 3
-    assert channels[0] == "chanel_0"
+    assert channels[0] == "channel_0"
     assert rate is None
 
 
@@ -289,11 +289,16 @@ from star_emg.io_utils import load_mat_file
 from star_emg.io_utils import load_bio_file
 
 base_example_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples", "data", "example")
-@pytest.mark.parametrize("extension, fct", [
-    (".txt", load_txt_file),
-    (".mat", load_mat_file),
-    (".bio", load_bio_file),
-])
+
+
+@pytest.mark.parametrize(
+    "extension, fct",
+    [
+        (".txt", load_txt_file),
+        (".mat", load_mat_file),
+        (".bio", load_bio_file),
+    ],
+)
 def test_load_file(extension, fct):
     example_txt_file = base_example_file + extension
     data, channels, frames, rate = fct(example_txt_file)

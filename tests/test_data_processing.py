@@ -65,11 +65,7 @@ def test_filter_shape(filter_function, args):
     fs = 2000
     t = np.arange(0, 2, 1 / fs)
 
-    signal = (
-        np.sin(2 * np.pi * 10 * t)
-        + np.sin(2 * np.pi * 100 * t)
-        + np.sin(2 * np.pi * 600 * t)
-    )
+    signal = np.sin(2 * np.pi * 10 * t) + np.sin(2 * np.pi * 100 * t) + np.sin(2 * np.pi * 600 * t)
 
     filtered, _, _ = filter_function(signal, *args, fs=fs)
 
