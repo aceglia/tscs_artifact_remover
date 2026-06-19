@@ -5,7 +5,7 @@ from scipy.fft import rfft, rfftfreq
 from scipy.stats import kurtosis
 from typing import Optional, Tuple, List, Union
 
-from artifact_remover.app.gui_utils import ensure_list
+from star_emg.app.gui_utils import ensure_list
 
 
 def _butter_bandpass(lowcut: float, highcut: float, fs: float, order: int = 4) -> Tuple[np.ndarray, np.ndarray]:

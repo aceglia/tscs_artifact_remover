@@ -1,5 +1,5 @@
 import numpy as np
-from artifact_remover.io_utils import DataLoader
+from star_emg.io_utils import DataLoader
 
 
 class DataStreamer:

@@ -6,7 +6,7 @@ import numpy as np
 from scipy.io import loadmat
 
 from biosiglive import load
-from artifact_remover.processing_utils import filter_data
+from star_emg.processing_utils import filter_data
 
 ArrayLike = np.ndarray
 

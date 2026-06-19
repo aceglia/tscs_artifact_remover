@@ -2,9 +2,9 @@ import pickle
 
 import numpy as np
 
-from artifact_remover.plot_utils import PlotSolution
-from artifact_remover.analysis import Analysis
-from artifact_remover.processing_utils import Quality
+from star_emg.plot_utils import PlotSolution
+from star_emg.analysis import Analysis
+from star_emg.processing_utils import Quality
 
 
 class Solution:

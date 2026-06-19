@@ -1,7 +1,7 @@
 import numpy as np
 
 from biosiglive.streaming.async_client import AsyncTCPClient
-from artifact_remover.io_utils import DataLoader
+from star_emg.io_utils import DataLoader
 import asyncio
 from biosiglive.streaming.utils import CircularBuffer, RollingBuffer
 

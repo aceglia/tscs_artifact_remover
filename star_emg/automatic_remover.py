@@ -4,14 +4,14 @@ from typing import Union
 import numpy as np
 import scipy
 
-from artifact_remover.io_utils import DataLoader
-from artifact_remover.decomposition_utils import (
+from star_emg.io_utils import DataLoader
+from star_emg.decomposition_utils import (
     compute_svd,
     remove_singular_values,
     get_signal_from_hankel,
 )
-from artifact_remover.solution import Solution
-from artifact_remover.processing_utils import filter_data, merge_dict
+from star_emg.solution import Solution
+from star_emg.processing_utils import filter_data, merge_dict
 
 
 class ArtifactRemover:

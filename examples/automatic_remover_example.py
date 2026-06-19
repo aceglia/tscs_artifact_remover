@@ -1,4 +1,4 @@
-from artifact_remover.automatic_remover import ArtifactRemover
+from star_emg.automatic_remover import ArtifactRemover
 import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
@@ -20,17 +20,17 @@ if __name__ == "__main__":
 
     artifact_remover = ArtifactRemover(data=path_file, signal_filter=True, center=True, cutoff=[10, 500])
     # import numpy as np 
-    # np.savetxt("signal.txt", artifact_remover.get_init_signal()[-1, 0, :])
-    # plt.plot(artifact_remover.get_init_signal()[-1, 0, :])
+    # np.savetxt("signal.txt", star_emg.get_init_signal()[-1, 0, :])
+    # plt.plot(star_emg.get_init_signal()[-1, 0, :])
     # plt.show(block=True)
-    sol = artifact_remover.process(
+    sol = star_emg.process(
         hankel_size=450,
         randomized=False,
         # batch_idxs=list(range(9, 10)),
         # data_window=[0, 10000],
         # data_window=[
-        #     artifact_remover.get_init_signal().shape[-1] - (process_window * 4),
-        #     artifact_remover.get_init_signal().shape[-1] - 1000,
+        #     star_emg.get_init_signal().shape[-1] - (process_window * 4),
+        #     star_emg.get_init_signal().shape[-1] - 1000,
         # ],
         # data_window=[process_window, process_window*20],
         channel_idxs=None,

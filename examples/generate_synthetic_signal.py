@@ -2,9 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fftpack import rfft, rfftfreq
 
-from artifact_remover.generator import ArtifactGenerator
-from artifact_remover.io_utils import DataLoader
-from artifact_remover.generator_utils import Modulator
+from star_emg.generator import ArtifactGenerator
+from star_emg.io_utils import DataLoader
+from star_emg.generator_utils import Modulator
 
 from biosiglive import load, save
 

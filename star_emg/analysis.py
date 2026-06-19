@@ -1,6 +1,6 @@
 import numpy as np
 import scipy
-from artifact_remover.processing_utils import median_frequency
+from star_emg.processing_utils import median_frequency
 
 
 class Analysis:

@@ -1,10 +1,10 @@
 from functools import partial
 
-from artifact_remover.streaming_utils import DataStreamer
+from star_emg.streaming_utils import DataStreamer
 from biosiglive.streaming.utils import CircularBuffer
-from artifact_remover.automatic_remover import ArtifactRemover
-from artifact_remover.solution import Solution
-from artifact_remover.processing_utils import Quality
+from star_emg.automatic_remover import ArtifactRemover
+from star_emg.solution import Solution
+from star_emg.processing_utils import Quality
 import numpy as np
 
 class RtArtifactRemover(ArtifactRemover):
@@ -59,7 +59,7 @@ class RtArtifactRemover(ArtifactRemover):
         quality = self.quality_fct(raw=data[0, 0], processed=None, analysis=[0, 1, 2, 3])
         data_fft = np.abs(rfft(data_weighted[0, 1]))
         self.quality_fct(raw=data_fft, processed=None, analysis=[1])
-        from artifact_remover.processing_utils import line_length, kurtosis_value, robust_max_percentile, median_frequency
+        from star_emg.processing_utils import line_length, kurtosis_value, robust_max_percentile, median_frequency
         np.cumsum(np.abs(rfft(data[0, 0])))[-1]
         np.cumsum(np.abs(rfft(data[0, 1])))[-1]
         np.sum(np.abs(np.diff(data[0, 1])), axis=-1)  
@@ -80,7 +80,7 @@ class RtArtifactRemover(ArtifactRemover):
         median_frequency(data[0, 1], self.streamer.data_loader.data_rate)
         
         line_length_fft = line_length(np.abs(rfft(data_weighted[0, 0])))
-        from artifact_remover.processing_utils import rfft, rfftfreq
+        from star_emg.processing_utils import rfft, rfftfreq
         import matplotlib.pyplot as plt
         plt.plot(rfftfreq(600, 1 / self.streamer.data_loader.data_rate), np.abs(rfft(data_weighted[0, 0, :])))
         plt.plot(rfftfreq(600, 1 / self.streamer.data_loader.data_rate), np.abs(rfft(data_weighted[0, 1, :])))

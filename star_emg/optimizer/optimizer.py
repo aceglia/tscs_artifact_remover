@@ -12,9 +12,9 @@ except ImportError:
 
 
 class Optimizer:
-    def __init__(self, artifact_remover: ArtifactRemover, n_processes: int = 1):
+    def __init__(self, star_emg: ArtifactRemover, n_processes: int = 1):
         self.n_processes = n_processes
-        self.artifact_remover = artifact_remover
+        self.star_emg = star_emg
         self.quality = Quality()
 
     @staticmethod
@@ -93,7 +93,7 @@ class Optimizer:
         self.process_window = process_window
 
         fct = partial(
-            self.artifact_remover.perform_window_process,
+            self.star_emg.perform_window_process,
             notch_filter=False,
             window=process_window, 
             return_dict=False,
@@ -139,15 +139,15 @@ class Optimizer:
         tuple: (data, data_rate, process_window)
             The data to optimize, the data rate and the process window.
         """
-        data = self.artifact_remover.data_loader.init_data
+        data = self.star_emg.data_loader.init_data
         j = ensure_list(batch) if batch is not None else slice(None)
         k = ensure_list(channels) if channels is not None else slice(None)
         self.init_data_shape = data.shape
-        self.artifact_remover.data_loader.init_data = data[j][:, k, ...]
-        self.artifact_remover.data_loader._apply_stack_batch()
-        # data = self.artifact_remover.data_loader.flatten_data(data[j, k, ...])
-        data_rate = self.artifact_remover.data_loader.data_rate
-        return self.artifact_remover.data_loader.init_data, data_rate
+        self.star_emg.data_loader.init_data = data[j][:, k, ...]
+        self.star_emg.data_loader._apply_stack_batch()
+        # data = self.star_emg.data_loader.flatten_data(data[j, k, ...])
+        data_rate = self.star_emg.data_loader.data_rate
+        return self.star_emg.data_loader.init_data, data_rate
 
     def save(self, filename: str):
         pass
