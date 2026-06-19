@@ -108,16 +108,6 @@ def test_dataloader_without_data_rate():
         )
 
 
-def test_dataloader_invalid_input():
-    with pytest.raises(RuntimeError):
-        DataLoader(None)
-
-
-# =============================================================================
-# flatten / unflatten
-# =============================================================================
-
-
 def test_flatten_unflatten():
     data = np.random.randn(2, 4, 100)
 

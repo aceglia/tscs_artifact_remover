@@ -133,7 +133,7 @@ class OptionWidget(QWidget):
             list_empty[ch] = process_arguments.copy()
         self.process_arguments[f"Frame_{self.current_frame}"] = list_empty
 
-    def update_frame(self, frame_number = 0):
+    def update_frame(self, frame_number=0):
         self.current_frame = frame_number
 
     @staticmethod
@@ -190,6 +190,7 @@ class OptionWidget(QWidget):
 
     def _check_config(self):
         return True
+
 
 class NotchOptions(OptionWidget):
     def __init__(self, parent=None):
@@ -312,7 +313,6 @@ class SVDOptions(OptionWidget):
         self.input_delay.textChanged.connect(self.set_hankel_delay)
         layout.addWidget(self.input_delay, 3, 1, 1, 1)
 
-
         layout.addWidget(QLabel("Threshold:"), 4, 0, 1, 2)
         self.input_factor = QLineEdit()
         self.input_factor.setText(str(self.factor))
@@ -387,7 +387,7 @@ class SVDOptions(OptionWidget):
         if self.automatic_hsize:
             return self.hankel_size_from_window()
         return self._hankel_size
-    
+
     def _check_config(self, process_arguments):
         return True
 
@@ -484,7 +484,9 @@ class OfflineRemover(Remover):
         self.current_filter = "notch"
         # for options in [self.notch_options, self.svd_options]:
         #     options.__init__(self.parent)
-        self._init_remover(file_path, data_rate=data_rate, signal_filter=signal_filter, center=center, cutoff=cutoff, order=order)
+        self._init_remover(
+            file_path, data_rate=data_rate, signal_filter=signal_filter, center=center, cutoff=cutoff, order=order
+        )
         self.enable()
 
     def get_all_data(self):
@@ -522,7 +524,7 @@ class StreamRemover(Remover):
         super().__init__(parent)
         self._adjust_value_for_stream()
         self.remover = None
-        
+
     def _adjust_value_for_stream(self):
         self.svd_options.init_process_args["process_window"] = 500
         self.svd_options.init_process_args["hankel_size"] = 100
@@ -539,4 +541,3 @@ class StreamRemover(Remover):
         self.enable()
         for options in [self.notch_options, self.svd_options]:
             options.init(channels, len(channels), streaming=True, event_log=events, queue=queue_args)
-        

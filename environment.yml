@@ -1,0 +1,12 @@
+name: star_emg
+channels:
+- conda-forge
+- default
+dependencies:
+- python >=3.10
+- packaging
+- matplotlib-base
+- numpy
+- scipy
+- pyqtgraph
+- PyQt6

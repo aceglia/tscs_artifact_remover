@@ -336,14 +336,26 @@ class StreamProcessingWidget(ProcessingWidget):
         self._init_layout()
 
     @staticmethod
-    def process(queue_in, queue_out, process_args_event, queue_process_args, runing_event, buff_len, channels_idxs, acquisition_rate):
+    def process(
+        queue_in,
+        queue_out,
+        process_args_event,
+        queue_process_args,
+        runing_event,
+        buff_len,
+        channels_idxs,
+        acquisition_rate,
+    ):
         channel_configs = None
         channel_configs_glob = {i: {} for i in channels_idxs}
         process_buffer = {i: CircularBuffer(1, buff_len) for i in channels_idxs}
         last_t = {i: -np.inf for i in channels_idxs}
-        fct = partial(RtArtifactRemover()._remove_artifact_from_windows, return_dict=False,
+        fct = partial(
+            RtArtifactRemover()._remove_artifact_from_windows,
+            return_dict=False,
             data_rate=acquisition_rate,
-            offline=False,)
+            offline=False,
+        )
         runing_event.wait()
         while runing_event.is_set():
             data = queue_in.get_stacked()
@@ -359,9 +371,8 @@ class StreamProcessingWidget(ProcessingWidget):
                 process_args_event.clear()
                 for ch in idxs:
                     if ch in channel_configs["channel_idxs"]:
-                            channel_configs_glob[ch] = channel_configs
+                        channel_configs_glob[ch] = channel_configs
                 # print('process: received new config for channel', ch, channel_configs_glob[ch])
-
 
             if channel_configs is not None:
                 for ch in idxs:
@@ -377,7 +388,7 @@ class StreamProcessingWidget(ProcessingWidget):
                     continue
 
                 t_new = buf_t[mask]
-                d_new = buf_data[0][mask]   # (n_samples,)
+                d_new = buf_data[0][mask]  # (n_samples,)
 
                 last_t[ch] = t_new[-1]
 
@@ -395,7 +406,7 @@ class StreamProcessingWidget(ProcessingWidget):
 
                 res = StreamProcessingWidget._process_worker(
                     fct,
-                    buf_data[0, -window:],   # last window
+                    buf_data[0, -window:],  # last window
                     buf_t[-window:],
                     config,
                     ch,
@@ -416,7 +427,7 @@ class StreamProcessingWidget(ProcessingWidget):
         self.channels_mapping = channels_mapping
         self.n_process = self.n_process if len(self.channels) > 1 else 1
         self.n_process = min(self.n_process, int(np.ceil(len(self.channels) / 2)))
-        self.queue_plot = {i: ClearableQueue(maxwrite=2000, name='plot') for i in range(len(self.channels))}
+        self.queue_plot = {i: ClearableQueue(maxwrite=2000, name="plot") for i in range(len(self.channels))}
         self.process_args_event = [mp.Event() for _ in range(self.n_process)]
         self.queue_process_args = [ClearableQueue(maxwrite=1) for _ in range(self.n_process)]
         self.parent.log_box.log(f"Starting stream with {self.n_process} processes...")

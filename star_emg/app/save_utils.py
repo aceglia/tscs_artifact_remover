@@ -2,7 +2,7 @@ from biosiglive import save
 
 
 class SaveStream:
-    def __init__(self, save_path, buffer_len = 10000):
+    def __init__(self, save_path, buffer_len=10000):
         self.save_path = save_path
         self.data = None
         self.n_chanels = None
@@ -18,9 +18,9 @@ class SaveStream:
         self.data_rate = data_rate
 
     def add_data(self, data, process_params):
-        self.data[:, self.counter:self.counter + data.shape[-1]] = data
+        self.data[:, self.counter : self.counter + data.shape[-1]] = data
         self.counter += data.shape[-1]
-        if self.counter 
+        # if self.counter
 
     def _get_meta(self):
         meta_dict = {
@@ -28,4 +28,3 @@ class SaveStream:
             "channels_name": self.channels_name,
             "data_rate": self.data_rate,
         }
-

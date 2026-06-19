@@ -93,7 +93,7 @@ class ChannelPlot:
             self.time = time
         if data is not None:
             if len(data) == 2:
-                self.raw = data[0] 
+                self.raw = data[0]
                 self.clean = data[1]
             if len(data) == 1:
                 if data_type == "raw":
@@ -271,7 +271,7 @@ class OfflinePlotter(Plotter):
                     [self.raw_data[idx, plot.idx, :], self.clean_signal[idx, plot.idx, :]],
                     data_type,
                     auto_range,
-                    time=[time_tmp]*2,
+                    time=[time_tmp] * 2,
                 )
             elif plot.idx not in visible_idx and plot.visible is True:
                 plot.set_visible(False)
@@ -280,7 +280,7 @@ class OfflinePlotter(Plotter):
                     [self.raw_data[idx, plot.idx, :], self.clean_signal[idx, plot.idx, :]],
                     data_type,
                     auto_range,
-                    time=[time_tmp]*2,
+                    time=[time_tmp] * 2,
                 )
 
     def update_channels(self, channels):
@@ -347,10 +347,10 @@ class StreamPlotter(Plotter):
     def update_plot(self, data_type="both", auto_range=False, force=False):
         if self.is_running_event is None:
             return
-                    
+
         if not self.is_running_event.is_set() and not force:
             return
-        
+
         visible_idx = [self.channels.index(c) for c in self.visible_channels]
         raw, t_raw = self.get_raw()
         process_data = self.get_data_from_queue(visible_idx, self.queue_plot)
@@ -358,7 +358,7 @@ class StreamPlotter(Plotter):
             # flush data before pause in the queue to avoid delays when resuming
             return
         raw, t_raw = self.adjust_to_wind((raw, t_raw), type="raw")
-        
+
         process_data = self.adjust_to_wind(process_data, type="clean", t_raw=t_raw)
         self.setUpdatesEnabled(False)
         for plot in self.plot_list:
@@ -400,12 +400,12 @@ class StreamPlotter(Plotter):
                     [
                         self.plot_list[i].plot_item.setXRange(t_start, t_stop, padding=0)
                         for i in range(len(self.plot_list))
-                        if (self.plot_list[i].visible or i ==0)
+                        if (self.plot_list[i].visible or i == 0)
                     ]
                     [
                         self.plot_list[i].view.setLimits(xMin=t_start, xMax=t_stop)
                         for i in range(len(self.plot_list))
-                        if (self.plot_list[i].visible or i ==0)
+                        if (self.plot_list[i].visible or i == 0)
                     ]
                     self._current_block = block_idx
 

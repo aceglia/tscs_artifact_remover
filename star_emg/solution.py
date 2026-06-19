@@ -3,7 +3,6 @@ import pickle
 import numpy as np
 
 from star_emg.plot_utils import PlotSolution
-from star_emg.analysis import Analysis
 from star_emg.processing_utils import Quality
 
 
@@ -88,9 +87,12 @@ class Solution:
 
         self.output = self.output.reshape(initial_data_shape)
         self.init_data = self.init_data.reshape(initial_data_shape)
-
-        self.s = self.s.reshape((initial_data_shape[0], initial_data_shape[1], -1))
-        self.s_reduced = self.s_reduced.reshape((initial_data_shape[0], initial_data_shape[1], -1))
+        if np.any(self.s, axis=-1):
+            self.s = self.s.reshape((initial_data_shape[0], initial_data_shape[1], -1))
+            self.s_reduced = self.s_reduced.reshape((initial_data_shape[0], initial_data_shape[1], -1))
+        else:
+            self.s = None
+            self.s_reduced = None
         self.is_empty = False
 
     def from_notch_filter(self, out_dict: dict, initial_data_shape: tuple = None) -> None:
@@ -170,6 +172,29 @@ class Solution:
             pickle.dump(dict_to_save, f)
 
     def plot(self, signals=True, fft=False, singular_values=False, stack_batch=False, show_analysis=False):
+        """
+        Plot the decomposition output.
+        Parameters:
+        -----------
+        signals: bool, optional
+            Whether to plot the signals.
+        fft: bool, optional
+            Whether to plot the FFT.
+        singular_values: bool, optional
+            Whether to plot the singular values.
+        stack_batch: bool, optional
+            Whether to stack the batch of signals.
+        show_analysis: bool, optional
+            Whether to show the analysis results.
+
+        Raises:
+        -------
+        RuntimeError: If the class solution do not have attribute: key.
+
+        Returns:
+        --------
+        None
+        """
         if show_analysis and self.analysis is None:
             raise RuntimeError("No analysis to show. Please run analyse() method before plotting analysis results.")
         plotter = PlotSolution(signals=signals, fft=fft, singular_values=singular_values, data_rate=self.data_rate)
@@ -192,18 +217,34 @@ class Solution:
         return dict_to_return
 
     def analyse(self, ground_truth=None, **kwargs) -> dict:
+        """
+        Run quality analysis on the decomposition output using the Quality class.
+        Parameters:
+        -----------
+        ground_truth: np.ndarray, optional
+            The ground truth signal to compare with the decomposition output.
+        **kwargs: dict
+            Additional keyword arguments to pass to the Quality class.
+            The possible keys are:
+            - kw: int, optional
+                The size of the window use for kurtosis analysis.
+            - maxw: int, optional
+                The size of the window to compute the maximum amplitude of the FFT.
+            - percentile: list, optional
+                The percentile to use for the quality analysis.
+            - fft_freqs: list, optional
+                The frequencies to use for the FFT analysis.
+
+        Returns:
+        --------
+        dict: dict
+            The quality analysis results.
+        """
         self.analysis = Quality()
         self.ground_truth = ground_truth
-        self.quality = self._convert_quality_to_dict(self.analysis.compute_quality(
-            self.init_data, self.output, ground_truth=self.ground_truth, fs=self.data_rate, **kwargs
-        ))
+        self.quality = self._convert_quality_to_dict(
+            self.analysis.compute_quality(
+                self.init_data, self.output, ground_truth=self.ground_truth, fs=self.data_rate, **kwargs
+            )
+        )
         return self.quality
-    
-        # self.analysis = Analysis(
-        #     compute_signal_error,
-        #     compute_frequency_analysis,
-        #     average_batch=average_batch,
-        #     average_channels=average_channels,
-        #     data_rate=self.data_rate,
-        # )
-        # return self.analysis.process(self.init_data, self.output, gt_signals=groundtruth_signals)

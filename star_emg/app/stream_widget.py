@@ -11,7 +11,8 @@ from ..processing_utils import Quality
 from .popup_utils import ChannelsPopup
 from .stream_utils import ClearableQueue
 from biosiglive.streaming.async_server import AsyncTCPServer
-import asyncio  
+import asyncio
+
 
 class Bridge(QObject):
     data_received = pyqtSignal(object)
@@ -48,7 +49,7 @@ class StreamWidget(QWidget):
         self.pause_button = QPushButton("Pause")
         self.pause_button.setEnabled(False)
         self.pause_button.clicked.connect(self._pause)
-        
+
         self.adress_in = QLineEdit()
         self.adress_in.setText("127.0.0.1")
         self.port_in = QLineEdit()
@@ -77,7 +78,7 @@ class StreamWidget(QWidget):
         self.layout.addWidget(label)
         self.layout.addWidget(self.ac_rate_in)
         self.layout.addWidget(self.set_channels_button)
-        self.layout.addWidget(QLabel('Display last (s):'))
+        self.layout.addWidget(QLabel("Display last (s):"))
         self.layout.addWidget(self.display_wind_in)
         self.setLayout(self.layout)
 
@@ -86,7 +87,9 @@ class StreamWidget(QWidget):
         self.pause_button.setEnabled(True)
         self.play_button.setEnabled(False)
         if not self.paused:
-            self.parent.parent.log_box.log(f"Launching the stream at: {self.address}:{self.port} waiting for a client...")
+            self.parent.parent.log_box.log(
+                f"Launching the stream at: {self.address}:{self.port} waiting for a client..."
+            )
             self.n_process = self.n_process if len(self.channels) > 1 else 1
             self.n_process = min(self.n_process, int(np.ceil(len(self.channels) / 2)))
             self.channels_mapping = {i: [] for i in range(self.n_process)}
@@ -96,15 +99,19 @@ class StreamWidget(QWidget):
             self.is_running_event = mp.Event()
             thread = threading.Thread(target=self._run_asyncio, daemon=True)
             thread.start()
-            self.parent.init_stream(self.display_window, queue_process=self.queue_process, is_running_event=self.is_running_event, channels_mapping=self.channels_mapping)
+            self.parent.init_stream(
+                self.display_window,
+                queue_process=self.queue_process,
+                is_running_event=self.is_running_event,
+                channels_mapping=self.channels_mapping,
+            )
         else:
             self.parent.set_paused(False)
             self.paused = False
 
-
     def _run_asyncio(self):
         self.server = AsyncTCPServer(self.address, self.port, buffer_length=self.display_window)
-        self.server.init_buffer(len(self.channels), dt = 1 / self.acquisition_rate)
+        self.server.init_buffer(len(self.channels), dt=1 / self.acquisition_rate)
         asyncio.run(self.server.start(task=self.task))
 
     def _stop(self):
@@ -135,11 +142,11 @@ class StreamWidget(QWidget):
     @property
     def address(self):
         return self.adress_in.text()
-    
+
     @property
     def display_window(self):
         return int(self.display_wind_in.text()) * self.acquisition_rate
-    
+
     @property
     def port(self):
         return int(self.port_in.text())
@@ -147,5 +154,3 @@ class StreamWidget(QWidget):
     @property
     def acquisition_rate(self):
         return int(self.ac_rate_in.text())
-    
-    

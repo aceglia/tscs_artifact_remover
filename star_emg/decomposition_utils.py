@@ -1,7 +1,12 @@
 import numpy as np
 import scipy
 from scipy.fft import rfft, rfftfreq
-# from fbpca import pca
+
+try:
+    from fbpca import pca
+except ImportError:
+    pca = None
+
 from numpy.lib.stride_tricks import as_strided
 
 
@@ -102,6 +107,8 @@ def compute_svd(
 
     if randomized:
         nb_principal_components = hankel.shape[0] if nb_principal_components is None else nb_principal_components
+        if pca is None:
+            raise ImportError("fbpca is not installed. Please install it to use randomized SVD.")
         U, S, Vh = pca(hankel, k=nb_principal_components, raw=True, n_iter=2)
     else:
         U, S, Vh = scipy.linalg.svd(
@@ -166,6 +173,7 @@ def peak_energy_ratio(X: np.ndarray) -> np.ndarray:
     P = np.abs(X) ** 2
     w = int(X.shape[-1] * 5 / 100)
     return np.max(P, axis=-1) / mean_around_row_max(P, w)
+
 
 def remove_singular_values(
     v: np.ndarray,

@@ -63,6 +63,7 @@ class DisplayWidget(QWidget):
     def _reset(self):
         raise NotImplementedError
 
+
 class OfflineDisplayWidget(DisplayWidget):
     def __init__(self, parent=None):
         super().__init__(parent)

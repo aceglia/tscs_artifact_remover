@@ -76,7 +76,7 @@ class ArtifactGenerator:
     ) -> np.ndarray:
         """
         Gets the biphasic response template based on the specified parameters. The template is created by combining the step response of the system with shifted versions of the response to create a biphasic shape. The resulting template is normalized and scaled by the specified amplitude before being returned as a numpy array.
-        
+
         """
         dic = self._get_random_params(
             amplitude=amplitude, delay_1=delay_1, delay_2=delay_2, num=num, den=den, T=T, factors=factors
@@ -112,19 +112,19 @@ class ArtifactGenerator:
 
     def generate_artifact(
         self,
-        stimulation_frequency:float=30,
-        sampling_rate:float=2000,
-        amplitude:float=1,
-        delay_1:Union[float, list]=0.1,
-        delay_2:Union[float, list]=0.2,
-        num:list=[1],
-        den:list=[0.02, 0.5, 12],
-        phase_inversion: bool=False,
-        artifact_duration: Union[float, list]=0.007,
-        output_shape: int=10000,
-        T: float=1,
-        factors: list=[1, 2, 1],
-    )-> np.ndarray:
+        stimulation_frequency: float = 30,
+        sampling_rate: float = 2000,
+        amplitude: float = 1,
+        delay_1: Union[float, list] = 0.1,
+        delay_2: Union[float, list] = 0.2,
+        num: list = [1],
+        den: list = [0.02, 0.5, 12],
+        phase_inversion: bool = False,
+        artifact_duration: Union[float, list] = 0.007,
+        output_shape: int = 10000,
+        T: float = 1,
+        factors: list = [1, 2, 1],
+    ) -> np.ndarray:
         """
         Generates a artifact signal based on the specified parameters. The artifact signal is created by combining the biphasic response template with a modulated version of the template. The resulting signal is returned as a numpy array.
         Parameters:
@@ -153,7 +153,7 @@ class ArtifactGenerator:
             The duration of the step response in seconds.
         factors: list
             The factors to apply to the original, first shifted, and second shifted responses in the biphasic template or a list of possible values to randomize from.
-        
+
         Returns:
         --------
         np.ndarray
@@ -196,7 +196,7 @@ class ArtifactGenerator:
         factors=[1, 2, 1],
         phase_inversion=False,
         modulator: Modulator = None,
-    )-> np.ndarray:
+    ) -> np.ndarray:
         """
         Applies the generated artifact to the input signal based on the specified parameters. The method generates the artifact template and modulates it using the provided Modulator instance. The modulated artifact is then added to the input signal, and the resulting signal with artifacts is returned as a numpy array.
         """

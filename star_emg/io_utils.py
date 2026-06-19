@@ -11,6 +11,58 @@ from star_emg.processing_utils import filter_data
 ArrayLike = np.ndarray
 
 
+def write_txt_file(
+    data: np.ndarray,
+    path: str,
+    delimiter: str = "\t",
+    headers: list[str] | None = None,
+) -> None:
+    """
+    Write data to a txt file.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Shape (n_batch, n_channel, n_sample) or (n_channel, n_sample).
+    path : str
+        Output file path.
+    delimiter : str
+        Column delimiter.
+    headers : list[str] | None
+        Channel names.
+    """
+    if data.ndim not in (2, 3):
+        raise ValueError("Data must be 2D or 3D")
+
+    n_channels = data.shape[-2]
+
+    if headers is None:
+        headers = [f"channel_{i}" for i in range(n_channels)]
+
+    # Start with a fresh file
+    open(path, "w").close()
+
+    if data.ndim == 3:
+        for i, batch in enumerate(data):
+            with open(path, "a", newline="") as file:
+                writer = csv.writer(file, delimiter=delimiter)
+
+                writer.writerow(headers)
+
+                # Shape: (n_channels, n_samples) -> rows = samples
+                writer.writerows(batch.T)
+
+                if i < data.shape[0] - 1:
+                    file.write("\n")
+    else:
+        with open(path, "w", newline="") as file:
+            writer = csv.writer(file, delimiter=delimiter)
+
+            writer.writerow(headers)
+
+            # Shape: (n_channels, n_samples) -> rows = samples
+            writer.writerows(data.T)
+
 
 def load_txt_file(path: str, delimiter: str = "\t") -> Tuple[ArrayLike, List[str], ArrayLike, float]:
     """
@@ -39,6 +91,9 @@ def load_txt_file(path: str, delimiter: str = "\t") -> Tuple[ArrayLike, List[str
                 rows = []
                 continue
             rows.append(row)
+        # Append last frame
+        if rows:
+            frames.append(rows)
 
     all_len = [len(row) for row in frames]
     channel_names = frames[0][:1][0][1:]
@@ -132,11 +187,11 @@ def load_from_dict(data_dic: Dict[str, Any]) -> Tuple[ArrayLike, List[str], int,
     tuple
     """
     array = ensure_array_dim(data_dic["values"])
-    frames = array.shape[0]
+    frames = np.arange(array.shape[0])
     if "channel_names" in data_dic.keys():
         channel_names = data_dic["channel_names"]
     else:
-        channel_names = [f"chanel_{i}" for i in range(array.shape[1])]
+        channel_names = [f"channel_{i}" for i in range(array.shape[1])]
     data_rate = None
     if "data_rate" in data_dic.keys():
         data_rate = data_dic["data_rate"]
@@ -293,8 +348,15 @@ class DataLoader:
         ignore_filtering: bool, optional
             A flag indicating whether to ignore the filtering step when loading the data. If set to True no filtering will be applied to the data, and the raw data will be loaded directly without any preprocessing. If set to False, the method will apply the specified filtering parameters to the data during the loading process.
         **kwargs: dict
-            Additional keyword arguments that can be used to specify data parameters (such as delimiter, channel names, data rate, and data window) and filtering parameters (such as cutoff frequency, filter order, centering option, and signal filtering option). These parameters will be retrieved and stored in the DataLoader instance for later use during data loading and processing.
-
+            The expected dict can contain the following keys:
+            - delimiter: The delimiter used in the file format (e.g., "\t" for .txt files).
+            - channel_names: A list of strings representing the names of the channels in the signal data.
+            - data_rate: A float representing the data rate (sampling frequency) of the signal data.
+            - data_window: A tuple representing the start and end indices of the data window to be loaded.
+            - cutoff: The cutoff frequency for filtering the data.
+            - order: The order of the filter to be applied to the data.
+            - center: Wether to center the data before filtering.
+            - signal_filter: Wether to apply filtering to the data after artifact removal.
         Returns:
         --------
         None
@@ -306,31 +368,34 @@ class DataLoader:
         self.gap_free = True
         self.stack_batch_applied = False
         self._unstack_shape = None
-
-        if self.path is None and self.data is None:
-            raise RuntimeError("Data format not recognized")
+        self.init_data = None
+        self.frames = []
+        self.channel_names = []
+        self.data_rate = None
 
         self.get_data_params(**kwargs)
         self.get_filtering_params(**kwargs)
-        self.load_data(ignore_filtering=ignore_filtering)
-        
+
+        if self.path is not None or self.data is not None:
+            self.load_data(ignore_filtering=ignore_filtering)
+
     def _apply_stack_batch(self) -> None:
         """
         Applies stacking to the batch dimension of the data. This method is called when the stack_batch option is enabled and the initial data has more than one frame. It manages the shape of the data by swapping axes and reshaping it to create a new batch dimension, allowing for further processing techniques that require a specific data shape.
         """
         self._unstack_shape = self.init_data.shape
+        self.stack_batch_applied = True
+        if len(self.init_data.shape) != 3:
+            return
         self.init_data = np.swapaxes(self.init_data, 0, 1)
         self.init_data = self.init_data.reshape(self.init_data.shape[0], -1)
-        self.stack_batch_applied = True
 
     def get_unstacked_data(self) -> None:
         """
         Gets the unstacked data if the stack_batch option was applied. This method is used to retrieve the original data shape after stacking has been applied to the batch dimension. If the stack_batch option was enabled and the initial data was reshaped, this method will reverse the stacking process by swapping axes and reshaping the data back to its original shape, allowing for further analysis or processing in its original format.
         """
         if self.stack_batch_applied:
-            data = self.init_data.reshape(
-                self._unstack_shape[1], self._unstack_shape[0], self._unstack_shape[2]
-            )
+            data = self.init_data.reshape(self._unstack_shape[1], self._unstack_shape[0], self._unstack_shape[2])
             data = np.swapaxes(data, 0, 1)
             return data
         else:
@@ -402,7 +467,7 @@ class DataLoader:
 
         self.is_data_loaded = True
 
-    def apply_filtering(self, data: Optional[ArrayLike] = None, offline: bool=True) -> ArrayLike:
+    def apply_filtering(self, data: Optional[ArrayLike] = None, offline: bool = True) -> ArrayLike:
         """ "
         Applies filtering to the data based on the specified filtering parameters. This method takes an optional data argument, which if provided, will be used for filtering instead of the data loaded from the file. It applies centering and filtering to the data using the center_and_filter function, which utilizes the specified cutoff frequency, filter order, centering option, signal filtering option, and data rate. The filtered data is then returned as a numpy array for further analysis or processing.
 
@@ -435,7 +500,7 @@ class DataLoader:
         cutoff: Union[float, List[float]] = 450.0,
         fs: float = 2000,
         order: int = 2,
-        offline=True
+        offline=True,
     ) -> ArrayLike:
         """
         Center and optionally filter a signal.

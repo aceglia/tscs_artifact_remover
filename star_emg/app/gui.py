@@ -90,12 +90,12 @@ class CustomToolBar:
 
 class GUI(QMainWindow):
     """
-    This class creates the main GUI for the artifact remover application. It contains a log box to display messages to the user, a processing widget to handle the file processing, and a custom toolbar for file and filter actions. The GUI also manages the state of the application, such as whether the current work is saved or not, and handles user interactions through various methods.
+    This class creates the main GUI for the StAR-EMG application. It contains a log box to display messages to the user, a processing widget to handle the file processing, and a custom toolbar for file and filter actions. The GUI also manages the state of the application, such as whether the current work is saved or not, and handles user interactions through various methods.
     """
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Artifact Remover")
+        self.setWindowTitle("StAR-EMG App")
         self.log_box = LogBox()
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)

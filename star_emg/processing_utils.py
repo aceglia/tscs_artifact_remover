@@ -35,7 +35,9 @@ def _butter_bandpass(lowcut: float, highcut: float, fs: float, order: int = 4) -
     return b, a
 
 
-def _bandpass_filter(data: np.ndarray, cutoff: List[float], fs: float, order: int = 4, offline=True, a=None, b=None) -> np.ndarray:
+def _bandpass_filter(
+    data: np.ndarray, cutoff: List[float], fs: float, order: int = 4, offline=True, a=None, b=None
+) -> np.ndarray:
     """
     Apply zero-phase Butterworth bandpass filtering.
 
@@ -86,7 +88,9 @@ def _butter_lowpass(cutoff: float, fs: float, order: int = 5) -> Tuple[np.ndarra
     return signal.butter(order, normal_cutoff, btype="low", analog=False)
 
 
-def _butter_lowpass_filter(data: np.ndarray, cutoff: float, fs: float, order: int = 5, offline=True, a=None, b=None) -> np.ndarray:
+def _butter_lowpass_filter(
+    data: np.ndarray, cutoff: float, fs: float, order: int = 5, offline=True, a=None, b=None
+) -> np.ndarray:
     """
     Apply zero-phase Butterworth lowpass filtering.
 
@@ -112,6 +116,7 @@ def _butter_lowpass_filter(data: np.ndarray, cutoff: float, fs: float, order: in
     else:
         return signal.lfilter(b, a, data), a, b
 
+
 def _butter_highpass(cutoff: float, fs: float, order: int = 5) -> Tuple[np.ndarray, np.ndarray]:
     """
     Design a Butterworth highpass filter.
@@ -135,7 +140,9 @@ def _butter_highpass(cutoff: float, fs: float, order: int = 5) -> Tuple[np.ndarr
     return signal.butter(order, normal_cutoff, btype="high", analog=False)
 
 
-def _butter_highpass_filter(data: np.ndarray, cutoff: float, fs: float, order: int = 5, offline=True, a=None, b=None) -> np.ndarray:
+def _butter_highpass_filter(
+    data: np.ndarray, cutoff: float, fs: float, order: int = 5, offline=True, a=None, b=None
+) -> np.ndarray:
     """
     Apply zero-phase Butterworth highpass filtering.
 
@@ -161,15 +168,16 @@ def _butter_highpass_filter(data: np.ndarray, cutoff: float, fs: float, order: i
     else:
         return signal.lfilter(b, a, data), a, b
 
+
 def filter_data(
     data: np.ndarray,
     cutoff: Union[float, List[float]] = 450.0,
     order: int = 2,
     fs: float = 2000.0,
     filter_type: str = "low",
-    offline=True, 
-    a=None, 
-    b = None
+    offline=True,
+    a=None,
+    b=None,
 ) -> np.ndarray:
     """
     Apply Butterworth filtering to 3D data array.
@@ -201,11 +209,18 @@ def filter_data(
     else:
         raise ValueError("Invalid filter type")
 
+    batch_added = False
+    if len(data.shape) != 3:
+        batch_added = True
+        data = data[None]
     filtered_data = np.zeros_like(data)
     for i in range(data.shape[0]):
         for k in range(data.shape[1]):
-            filtered_data[i, k, :], a, b = filter_function(data[i, k, :], cutoff, fs, order=order, offline=offline, a=a, b=b)
-
+            filtered_data[i, k, :], a, b = filter_function(
+                data[i, k, :], cutoff, fs, order=order, offline=offline, a=a, b=b
+            )
+    if batch_added:
+        filtered_data = filtered_data[0]
     return filtered_data, a, b
 
 
@@ -496,9 +511,13 @@ class Quality:
             quality[(0, *indices[:-1])] = kurtosis_value(data, kw) if 0 in analysis else np.nan
             quality[(1, *indices[:-1])] = line_length(data) if 1 in analysis else np.nan
             quality[(2, *indices[:-1])], fft, fft_freqs = (
-                median_frequency(data, fs, return_fft=True, fft_freq=fft_freqs) if (2 in analysis or 3 in analysis) else np.nan
+                median_frequency(data, fs, return_fft=True, fft_freq=fft_freqs)
+                if (2 in analysis or 3 in analysis)
+                else np.nan
             )
             quality[(3, *indices[:-1])] = (
-                robust_max_percentile(fft[..., : int(np.argwhere(fft_freqs > maxw)[0])], per) if 3 in analysis else np.nan
+                robust_max_percentile(fft[..., : int(np.argwhere(fft_freqs > maxw)[0])], per)
+                if 3 in analysis
+                else np.nan
             )
         return self.get_quality(idx, channel)

@@ -1,5 +1,3 @@
-import queue
-
 import numpy as np
 from multiprocessing import RawArray, RawValue, Queue
 import time
@@ -11,7 +9,7 @@ class ClearableQueue:
         self.maxwrite = maxwrite
         self.total_written = 0
         self.name = name
-    
+
     def clear(self):
         print(f"Queue {self.name} reached maxwrite limit, clearing the queue.")
         while True:
@@ -20,7 +18,7 @@ class ClearableQueue:
             except Exception:
                 break
         self.total_written = 0
-        
+
     def get(self, timeout=None):
         return self.queue.get(timeout=timeout)
 
@@ -45,9 +43,9 @@ class ClearableQueue:
                 d, t, idx = self.queue.get_nowait()
                 self.total_written -= 1
                 # if self.name == 'plot':
-                    # print(f"Getting data from queue {self.name}, data shape: {d.shape} for channel {idx}")
-                data_chunks.append(d)  
-                time_chunks.append(t) 
+                # print(f"Getting data from queue {self.name}, data shape: {d.shape} for channel {idx}")
+                data_chunks.append(d)
+                time_chunks.append(t)
                 idx_chunks.append(idx)
             except Exception:
                 break
@@ -75,6 +73,7 @@ class ClearableQueue:
         except Exception:
             return None
 
+
 def dispatch_queue(results):
     data, t, total_samples, idx = results
     return data, t, total_samples, idx
@@ -94,6 +93,7 @@ def empty_queue(queue, timeout=0.01):
             break
     return all_data
 
+
 class SharedArray:
     def __init__(self, size, dtype=np.float64):
         self.size = size
@@ -104,7 +104,7 @@ class SharedArray:
         self.last_len = RawValue("i", 0)
         self.version = RawValue("i", 0)  # for consistency
 
-    def set(self, data: np.ndarray, t: np.ndarray = None, idx: int =None):
+    def set(self, data: np.ndarray, t: np.ndarray = None, idx: int = None):
         n = len(data)
         self.version.value = 1
         if idx == 0:

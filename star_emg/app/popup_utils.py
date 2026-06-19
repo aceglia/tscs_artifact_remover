@@ -1,4 +1,14 @@
-from PyQt5.QtWidgets import QMessageBox, QDialog, QGridLayout, QLabel, QLineEdit, QCheckBox, QPushButton, QTableWidget, QTableWidgetItem
+from PyQt5.QtWidgets import (
+    QMessageBox,
+    QDialog,
+    QGridLayout,
+    QLabel,
+    QLineEdit,
+    QCheckBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+)
 
 
 def popup_warning_save(text, title, fct):
@@ -100,7 +110,7 @@ class ChannelsPopup(QDialog):
     def _create_layout(self):
         self.table_widget = QTableWidget()
         self.table_widget.setColumnCount(1)
-        self.table_widget.setHorizontalHeaderLabels(['Channel name'])
+        self.table_widget.setHorizontalHeaderLabels(["Channel name"])
         self.add_device_button = QPushButton("Add channel")
         self.add_device_button.clicked.connect(self._on_add_channel)
         self.remove_device_button = QPushButton("Remove channel")
@@ -128,7 +138,7 @@ class ChannelsPopup(QDialog):
     def _add_channel(self, channel=None):
         row_index = self.table_widget.rowCount()
         self.table_widget.insertRow(row_index)
-        name = f"Channel {row_index}" if (channel is None or channel == '') else channel
+        name = f"Channel {row_index}" if (channel is None or channel == "") else channel
         self.table_widget.setItem(row_index, 0, QTableWidgetItem(name))
 
     def _remove_row(self):
@@ -146,4 +156,3 @@ class ChannelsPopup(QDialog):
     @property
     def channels(self):
         return self.get_channels()
-    

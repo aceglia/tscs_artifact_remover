@@ -3,7 +3,10 @@ import numpy as np
 
 class Modulator:
     """
-    Class to apply modulation to a signal. The modulation can be applied in three ways: "steps", "linear", and "constant". The modulation type can be set using the "modulation_type" attribute, and the parameters for each modulation type can be set using the "set_modulation_config" method. The modulated signal can be obtained by calling the "apply_modulation" method with the input signal.
+    Class to apply modulation to a signal.
+    The modulation can be applied in three ways: "steps", "linear", and "constant".
+    The modulation type can be set using the "modulation_type" attribute, and the parameters for each modulation type can be set using the "set_modulation_config" method.
+    The modulated signal can be obtained by calling the "apply_modulation" method with the input signal.
     """
 
     def __init__(self, **kwargs):

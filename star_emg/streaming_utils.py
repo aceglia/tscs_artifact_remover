@@ -7,15 +7,15 @@ class DataStreamer:
         self.current_index = 0
         self.offline = offline
         self.chunk_size = chunk_size
-        if self.offline and not data:
+        if self.offline and data is None:
             raise ValueError("Offline mode requires initial data.")
-        if data is not None:
-            self.load_data(data, data_loader_kwargs)
+        self.load_data(data, data_loader_kwargs)
 
     def load_data(self, data, data_loader_kwargs):
-        self.data_loader = DataLoader(data,ignore_filtering=True, **data_loader_kwargs)
+        self.data_loader = DataLoader(data, ignore_filtering=True, **data_loader_kwargs)
+        if self.data_loader.init_data is None:
+            return
         self.data_loader._apply_stack_batch()
-        # self.init_data = self.data_loader.init_data
         self.is_data_loaded = True
 
     @property

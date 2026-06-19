@@ -48,8 +48,15 @@ class ArtifactRemover:
         data : str
             Path to the data file.
         data_loader_kwargs : dict
-            Additional keyword arguments for the DataLoader.
-
+            The expected dict can contain the following keys:
+            - delimiter: The delimiter used in the file format (e.g., "\t" for .txt files).
+            - channel_names: A list of strings representing the names of the channels in the signal data.
+            - data_rate: A float representing the data rate (sampling frequency) of the signal data.
+            - data_window: A tuple representing the start and end indices of the data window to be loaded.
+            - cutoff: The cutoff frequency for filtering the data.
+            - order: The order of the filter to be applied to the data.
+            - center: Wether to center the data before filtering.
+            - signal_filter: Wether to apply filtering to the data after artifact removal.
         Returns
         --------
         None
@@ -60,7 +67,6 @@ class ArtifactRemover:
     def process(
         self,
         hankel_size: int = 300,
-        threshold: float = None,
         randomized: bool = False,
         post_filter: bool = False,
         threads: int = 1,
@@ -85,8 +91,6 @@ class ArtifactRemover:
         ------------
         hankel_size : int
             The numebr of lines of the Hankel matrix.
-        threshold : float, optional
-            Threshold for singular value filtering.
         randomized : bool
             Whether to use randomized SVD.
         post_filter : bool
@@ -263,7 +267,7 @@ class ArtifactRemover:
         data, return_dict: bool = True, window: int = 10000, notch_filter: bool = False, **kwargs
     ) -> dict | np.ndarray:
         """
-        Process data in sliding windows.
+        Process data in a moving windows approach.
 
         Parameters
         ------------
@@ -334,9 +338,7 @@ class ArtifactRemover:
         randomized: bool = False,
         filter: bool = False,
         nb_principal_components: int = None,
-        n_reconstruct: int = None,
         epsilon: float = None,
-        offline: bool = True,
         hankel_delay: int = 1,
         return_dict: bool = True,
         data_rate: float = None,
@@ -344,7 +346,7 @@ class ArtifactRemover:
         factor: float = 0.5,
         fft_freqs: scipy.fft.rfftfreq = None,
         rejected_idx=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Perform SVD-based signal decomposition and artifact removal.
@@ -372,6 +374,7 @@ class ArtifactRemover:
         if return_dict:
             out_dict = {"data": data}
 
+        # TODO: reuse hankel matrix if the signal didn't change and if the hankel size is the same
         u, s, v, hankel_matrix = compute_svd(
             data,
             n_rows=hankel_size,
@@ -386,13 +389,19 @@ class ArtifactRemover:
             out_dict.update({"s": s.copy()})
 
         s_reduced, v, u, rejected_idx = remove_singular_values(
-            v, s, u, data_rate=data_rate, freq_bounds=freq_bounds, factor=factor, fft_freqs=fft_freqs, rejected_idx=rejected_idx
+            v,
+            s,
+            u,
+            data_rate=data_rate,
+            freq_bounds=freq_bounds,
+            factor=factor,
+            fft_freqs=fft_freqs,
+            rejected_idx=rejected_idx,
         )
         # if n_reconstruct is not None:
         #     signal_reduced = get_signal_from_hankel(u @ (v[:, -n_reconstruct:] * s_reduced[:, None]), hankel_delay)
         # else:
         signal_reduced = get_signal_from_hankel((u * s_reduced) @ v, hankel_delay)
-
 
         if return_dict:
             out_dict["unfiltered_signal"] = signal_reduced.copy()
@@ -419,9 +428,9 @@ class ArtifactRemover:
         return_dict: bool = True,
         first_peak: float = None,
         offline=True,
-        b_list=None, 
+        b_list=None,
         a_list=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Apply notch filters at harmonic frequencies.

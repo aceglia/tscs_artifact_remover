@@ -8,7 +8,31 @@ from scipy.fft import rfft, rfftfreq
 
 
 class PlotSolution:
+    """
+    Class to plot the solution of the EMG analysis.
+    """
+
     def __init__(self, signals=True, fft=False, singular_values=False, channel_names=(), data_rate=2000):
+        """
+        Initialize the PlotSolution class.
+        Parameters:
+        ------------
+        signals: bool
+            Whether to plot the signals.
+        fft: bool
+            Whether to plot the FFT.
+        singular_values: bool
+            Whether to plot the singular values.
+        channel_names: list of str
+            The names of the channels to plot.
+        data_rate: int
+            The data rate of the signals, used for FFT plotting.
+
+        Returns:
+        --------
+        None
+
+        """
         self.next_button = None
         self.previous_button = None
         self.root = tk.Tk()
@@ -63,6 +87,17 @@ class PlotSolution:
         self._plot_graphs()
 
     def init_figure_canvas(self, nb_subplot):
+        """
+        Initialize the figure and canvas for plotting.
+        Parameters:
+        ------------
+        nb_subplot: int
+            The number of subplots to create.
+
+        Returns:
+        --------
+        None
+        """
         fig, axes = plt.subplots(nb_subplot, 1)
         canvas = FigureCanvasTkAgg(fig, master=self.root)
         canvas.draw()
@@ -84,8 +119,10 @@ class PlotSolution:
             )
         text = "Signals" if self.analysis is None else "Analysis:\n"
         if self.analysis is not None:
-            for n, name in enumerate(['raw', 'process']):
-                text += (name + ': '
+            for n, name in enumerate(["raw", "process"]):
+                text += (
+                    name
+                    + ": "
                     + f" Kurtosis = {float(self.analysis['kurtosis'][n][self.batch_idx, self.channel_idx]):.4f}"
                     + f", Line Length = {float(self.analysis['Line Length'][n][self.batch_idx, self.channel_idx]):.4f}"
                     + "\n"
@@ -110,11 +147,23 @@ class PlotSolution:
             fft_data = np.abs(rfft(data))
             freq = rfftfreq(data.shape[-1], 1 / self.data_rate)
             ax.plot(freq, fft_data, color=colors[d], alpha=alpha[d])
-        
+
         if self.analysis is not None:
-            for n, name in enumerate(['raw', 'process']):
-                plt.vlines(self.analysis["Median frequency"][n][self.batch_idx, self.channel_idx], 0, ax.get_ylim()[1], color=colors[n], linestyles="--")
-                plt.hlines(self.analysis["FFT Amplitude"][n][self.batch_idx, self.channel_idx], 0, ax.get_xlim()[1], color=colors[n], linestyles="--")
+            for n, name in enumerate(["raw", "process"]):
+                plt.vlines(
+                    self.analysis["Median frequency"][n][self.batch_idx, self.channel_idx],
+                    0,
+                    ax.get_ylim()[1],
+                    color=colors[n],
+                    linestyles="--",
+                )
+                plt.hlines(
+                    self.analysis["FFT Amplitude"][n][self.batch_idx, self.channel_idx],
+                    0,
+                    ax.get_xlim()[1],
+                    color=colors[n],
+                    linestyles="--",
+                )
 
                 # text = (name + ': ' +
                 #     + f" Kurtosis = {float(self.analysis['kurtosis'][n][self.batch_idx, self.channel_idx]):.4f}"
@@ -123,8 +172,8 @@ class PlotSolution:
             # ax.set_title(text)
             # ax.text(x=0, y=ax.get_ylim()[1], s=text, ha="left", va="top", fontsize=10)
 
-        ax.set_title("FFT" )
-        ax.legend(["Initial Signal", "Processed Signal"]) #, "Groundtruth Signal"])
+        ax.set_title("FFT")
+        ax.legend(["Initial Signal", "Processed Signal"])  # , "Groundtruth Signal"])
 
     def _plot_singular_values(self, ax):
         ax.plot(self.data["s"][self.batch_idx, self.channel_idx, :], label="Initial Signal")
@@ -142,6 +191,38 @@ class PlotSolution:
         self.canvas.draw()
 
     def plot(self, data: dict, stack_batch=False, analysis=None):
+        """
+        Plot the data using a tkinter interface.
+        Parameters:
+        ------------
+        data: dict
+            The data to plot, which should contain the following keys:
+            - init_data: np.ndarray
+                The initial data to plot.
+            - output: np.ndarray
+                The processed data to plot.
+            - groundtruth_signals: np.ndarray
+                The groundtruth signals to plot.
+            - s: np.ndarray
+                The singular values to plot.
+            - s_reduced: np.ndarray
+                The reduced singular values to plot.
+        stack_batch: bool
+            Whether to stack the batch dimension of the data.
+        analysis: dict, optional
+            The analysis results to plot (from the Analysis class), which should contain the following keys:
+            - kurtosis: np.ndarray
+                The kurtosis values to plot.
+            - Line Length: np.ndarray
+                The line length values to plot.
+            - Median frequency: np.ndarray
+                The median frequency values to plot.
+            - FFT Amplitude: np.ndarray
+                The FFT amplitude values to plot.
+        Returns:
+        --------
+        None
+        """
         self.analysis = analysis
         self.channel_names = (
             [f"Channel {i}" for i in range(data["init_data"].shape[1])]

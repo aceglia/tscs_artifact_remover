@@ -5,6 +5,7 @@ import numpy as np
 from ..automatic_remover import ArtifactRemover
 from ..processing_utils import Quality, ensure_list
 from typing import Union
+
 try:
     import cma
 except ImportError:
@@ -25,11 +26,11 @@ class Optimizer:
         # max_freq = np.sqrt(np.mean((quality[0][3].item() - quality[1][3].item())**2)) * 10
         med_freq = abs(1 - (quality[1][2].item() / 80))
         max_freq = abs(1 - (quality[1][3].item() / quality[0][3].item()))
-        return (kurt_proc + med_freq + max_freq)
+        return kurt_proc + med_freq + max_freq
 
     @staticmethod
     def compute_cost(x, fct: partial, data: np.ndarray, quality_fct: partial) -> float:
-        data_processed = fct(data=data, hankel_size=int(x[0] * 1000), freqs_bounds=[10, x[1] * 1000], factor=x[2])  
+        data_processed = fct(data=data, hankel_size=int(x[0] * 1000), freqs_bounds=[10, x[1] * 1000], factor=x[2])
         quality_fct(raw=None, processed=data_processed)
         quality = quality_fct(raw=data, processed=None, analysis=[3])
         return Optimizer.get_cost_from_quality(quality)
@@ -42,8 +43,18 @@ class Optimizer:
         init = [0.4, 0.45, 0.35]
         if cma is None:
             raise ImportError("cma module is required for optimization")
-        res, es = cma.fmin2(lambda x: Optimizer.compute_cost(x, fct, data[:10000], quality_fct), init, 0.2, options={'bounds': [lower_bounds, upper_bounds], 'tolfun': 1e-3, 'verb_log': 0, 'maxiter': 80,
-        'popsize': 8})
+        res, es = cma.fmin2(
+            lambda x: Optimizer.compute_cost(x, fct, data[:10000], quality_fct),
+            init,
+            0.2,
+            options={
+                "bounds": [lower_bounds, upper_bounds],
+                "tolfun": 1e-3,
+                "verb_log": 0,
+                "maxiter": 80,
+                "popsize": 8,
+            },
+        )
         print(res)
         # n_windows = data.shape[-1] // process_window
         # params_list = []
@@ -83,27 +94,26 @@ class Optimizer:
         process_window: int
             The window size for processing.
         channels: Union[list, int]
-            The channels to optimize. If None, all channels are optimized. 
+            The channels to optimize. If None, all channels are optimized.
         batch: Union[list, int]
             The batch to optimize. If None, all batches are optimized.
         """
         data, data_rate = self._get_data_to_optimize(channels, batch)
-        freqs = rfftfreq(data.shape[-1], d=1/data_rate)
+        freqs = rfftfreq(data.shape[-1], d=1 / data_rate)
         self.quality.init_shape((1, 1, data.shape[-1]))
         self.process_window = process_window
 
         fct = partial(
             self.star_emg.perform_window_process,
             notch_filter=False,
-            window=process_window, 
+            window=process_window,
             return_dict=False,
             data_rate=data_rate,
             freqs=freqs,
         )
 
         quality_part = partial(
-            self.quality.compute_quality,
-                ground_truth=None, channel=0, idx=0, fs=data_rate, kw=100, fft_freqs=freqs
+            self.quality.compute_quality, ground_truth=None, channel=0, idx=0, fs=data_rate, kw=100, fft_freqs=freqs
         )
 
         if self.n_processes == 1 or data.shape[0] == 1:
