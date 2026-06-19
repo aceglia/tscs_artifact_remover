@@ -7,9 +7,9 @@
 #include <cmath>
 #include <cstdlib>
 
-#include "artifact_remover/Remover.h"
+#include "star_emg/Remover.h"
 
-using namespace artifact_remover;
+using namespace star_emg;
 
 int main()
 {

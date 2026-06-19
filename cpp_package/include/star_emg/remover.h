@@ -6,11 +6,11 @@
 #include <complex>
 #include <vector>
 
-#include "artifact_remover/Types.h"
-#include "artifact_remover/SignalDecomposition.h"
-#include "artifact_remover/FFT.h"
+#include "star_emg/Types.h"
+#include "star_emg/SignalDecomposition.h"
+#include "star_emg/FFT.h"
 
-namespace artifact_remover
+namespace star_emg
 {
 
 using ComplexMatrix = Eigen::Matrix<
@@ -51,7 +51,7 @@ public:
 
 private:
 
-    artifact_remover::FFT fft_;
+    star_emg::FFT fft_;
 
     // -----------------------------------------------------
     // Metrics

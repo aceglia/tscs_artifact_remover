@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace artifact_remover
+namespace star_emg
 {
     class RingBuffer
     {
@@ -74,4 +74,4 @@ namespace artifact_remover
 
         bool full_{false};
     };
-} // namespace artifact_remover::streaming
+} // namespace star_emg::streaming

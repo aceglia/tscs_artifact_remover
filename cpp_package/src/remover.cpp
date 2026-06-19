@@ -2,7 +2,7 @@
 // Remover.cpp
 // =========================================================
 
-#include "artifact_remover/Remover.h"
+#include "star_emg/Remover.h"
 
 #include <algorithm>
 #include <numeric>
@@ -11,7 +11,7 @@
 #include <iostream>
 #include <set>
 
-namespace artifact_remover
+namespace star_emg
 {
 
     // =========================================================
@@ -182,7 +182,7 @@ namespace artifact_remover
         // TODO: send template Eigen matrix to compute_svd to avoid copying data
 
         auto svd_result =
-            artifact_remover::compute_svd(signal, L, tau, svd_threshold);
+            star_emg::compute_svd(signal, L, tau, svd_threshold);
 
         result.hankel = svd_result.hankel;
 
@@ -226,7 +226,7 @@ namespace artifact_remover
         // -----------------------------------------------------
 
         result.cleaned_signal =
-            artifact_remover::reconstruct_from_hankel(
+            star_emg::reconstruct_from_hankel(
                 H_clean,
                 tau);
         

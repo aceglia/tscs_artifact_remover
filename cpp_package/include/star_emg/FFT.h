@@ -4,9 +4,9 @@
 #include <Eigen/Dense>
 #include <unsupported/Eigen/FFT>
 #include <complex>
-#include "artifact_remover/Types.h"
+#include "star_emg/Types.h"
 
-namespace artifact_remover
+namespace star_emg
 {
 
 using ComplexMatrix = Eigen::Matrix<
@@ -48,4 +48,4 @@ private:
     Eigen::FFT<double> fft_;
 };
 
-} // namespace artifact_remover
+} // namespace star_emg

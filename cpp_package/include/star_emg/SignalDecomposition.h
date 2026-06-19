@@ -3,9 +3,9 @@
 
 #include <Eigen/Dense>
 #include <tuple>
-#include "artifact_remover/Types.h"
+#include "star_emg/Types.h"
 
-namespace artifact_remover 
+namespace star_emg 
 {
 
 struct SVDResult
@@ -35,4 +35,4 @@ Vector reconstruct_from_hankel(const Matrix& hankel, int tau = 1);
  */
 SVDResult compute_svd(const Vector& emg_signal, int n_rows = 800, int hankel_delay = 1, double threshold = 0.0);
 
-} // namespace artifact_remover
+} // namespace star_emg

@@ -1,13 +1,13 @@
 
 // #define EIGEN_USE_MKL_ALL
 
-#include "artifact_remover/SignalDecomposition.h"
+#include "star_emg/SignalDecomposition.h"
 #include <Eigen/SVD>
 #include <vector>
 #include <stdexcept>
 #include <iostream>
 
-namespace artifact_remover
+namespace star_emg
 {
 
     /**
@@ -130,4 +130,4 @@ namespace artifact_remover
         return out;
     }
 
-} // namespace artifact_remover
+} // namespace star_emg

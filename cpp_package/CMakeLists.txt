@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.15)
 # =========================================================
 
 project(
-    artifact_remover
+    star_emg
     VERSION 0.1
     LANGUAGES CXX
 )
@@ -39,7 +39,7 @@ endif()
 
 
 add_library(
-    artifact_remover
+    star_emg
 )
 
 add_executable(
@@ -47,7 +47,7 @@ add_executable(
     demo/RemoverExample.cpp
 )
 
-target_sources(artifact_remover
+target_sources(star_emg
     PRIVATE
         src/SignalDecomposition.cpp
         src/FFT.cpp
@@ -57,10 +57,10 @@ target_sources(artifact_remover
         FILE_SET HEADERS
         BASE_DIRS include
         FILES 
-            include/artifact_remover/Types.h
-            include/artifact_remover/SignalDecomposition.h
-            include/artifact_remover/FFT.h
-            include/artifact_remover/remover.h
+            include/star_emg/Types.h
+            include/star_emg/SignalDecomposition.h
+            include/star_emg/FFT.h
+            include/star_emg/remover.h
 )
 
 set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
@@ -85,14 +85,14 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(pocketfft)
 FetchContent_MakeAvailable(Eigen)
 
-target_include_directories(artifact_remover
+target_include_directories(star_emg
  PRIVATE
     ${pocketfft_SOURCE_DIR}
     ${Eigen_SOURCE_DIR}
 )
     
 
-target_link_libraries(artifact_remover
+target_link_libraries(star_emg
     PRIVATE
     Eigen3::Eigen
 )
@@ -105,24 +105,24 @@ if(EXISTS "${MKL_INCLUDE_DIR}/mkl.h")
     message(STATUS "Using MKL for linear algebra (Release build)")
     message(STATUS "MKL include dir: ${MKL_ROOT}")
 
-    target_include_directories(artifact_remover PRIVATE "${MKL_INCLUDE_DIR}")
+    target_include_directories(star_emg PRIVATE "${MKL_INCLUDE_DIR}")
     
-    target_link_directories(artifact_remover PRIVATE "${MKL_LIB_DIR}")
+    target_link_directories(star_emg PRIVATE "${MKL_LIB_DIR}")
 
-    target_link_libraries(artifact_remover
+    target_link_libraries(star_emg
         PUBLIC
         ${MKL_ROOT}/lib/mkl_intel_lp64.lib
         ${MKL_ROOT}/lib/mkl_core.lib
         ${MKL_ROOT}/lib/mkl_sequential.lib
     )
-    target_compile_definitions(artifact_remover
+    target_compile_definitions(star_emg
         PRIVATE
             EIGEN_USE_MKL_ALL
             EIGEN_MKL_DEFAULT
     )
 else()
     message(STATUS "Using Eigen built-in algorithms")
-    target_compile_definitions(artifact_remover
+    target_compile_definitions(star_emg
         PRIVATE
             EIGEN_POCKETFFT_DEFAULT
     )
@@ -130,6 +130,6 @@ endif()
 
 target_link_libraries(demo_app
     PRIVATE
-    artifact_remover
+    star_emg
     Eigen3::Eigen
 )

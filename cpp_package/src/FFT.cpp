@@ -3,11 +3,11 @@
 // #define EIGEN_FFTW_DEFAULT
 
 
-#include "artifact_remover/FFT.h"
+#include "star_emg/FFT.h"
 #include <vector>
 #include <iostream>
 
-namespace artifact_remover
+namespace star_emg
 {
 
 ComplexMatrix FFT::rfft(const Matrix& x)
@@ -82,4 +82,4 @@ std::vector<double> FFT::get_fft_frequencies(int N, double Fs)
     return frequencies;
 }
 
-} // namespace artifact_remover
+} // namespace star_emg

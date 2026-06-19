@@ -1,9 +1,9 @@
 // RingBuffer.cpp
 
 
-#include "artifact_remover/RingBuffer.h"
+#include "star_emg/RingBuffer.h"
 
-namespace artifact_remover
+namespace star_emg
 {
     RingBuffer::RingBuffer(
         size_t nChannels,
@@ -127,4 +127,4 @@ namespace artifact_remover
             }
         }
     }
-} // namespace artifact_remover
+} // namespace star_emg

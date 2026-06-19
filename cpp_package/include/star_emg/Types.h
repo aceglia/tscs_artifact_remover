@@ -2,7 +2,7 @@
 
 #include <Eigen/Dense>
 
-namespace artifact_remover
+namespace star_emg
 {
 
 // Row-major matrix for memory layout optimization
