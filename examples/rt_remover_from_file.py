@@ -21,7 +21,7 @@ if __name__ == "__main__":
     print("Hankel matrix size is: ", "(", h_size, ",", process_window - (h_size - 1) * h_delay, ")")
     notch_filter = False
     artifact_remover = RtArtifactRemover(
-        data=path_file, chunk_size=20, window_size=process_window, signal_filter=False, center=True, cutoff=[10, 500]
+        data=path_file, chunk_size=20, window_size=process_window, signal_filter=False, center=True
     )
     channel = 0
     sol = artifact_remover.process_all_data(
