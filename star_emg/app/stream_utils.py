@@ -3,47 +3,53 @@ from multiprocessing import RawArray, RawValue, Queue
 import time
 
 
-class ClearableQueue:
-    def __init__(self, maxwrite=1000, name=None):
+class CustomQueue:
+    """
+    A custom queue class that extends the built-in Queue class and adds additional functionality.
+    """
+
+    def __init__(self, name: str = None):
         self.queue = Queue()
-        self.maxwrite = maxwrite
-        self.total_written = 0
         self.name = name
 
     def clear(self):
-        print(f"Queue {self.name} reached maxwrite limit, clearing the queue.")
+        """
+        Clear the queue.
+        """
         while True:
             try:
                 self.queue.get_nowait()
             except Exception:
                 break
-        self.total_written = 0
 
-    def get(self, timeout=None):
+    def get(self, timeout: float = None):
+        """
+        Get an item from the queue, with an optional timeout.
+        """
         return self.queue.get(timeout=timeout)
 
     def put_nowait(self, obj):
-        # if self.total_written >= self.maxwrite:
-        #     self.clear()
+        """
+        Put an item into the queue without blocking.
+        """
         try:
-            # if self.name == 'plot':
-            #     print(f"Putting data into queue {self.name}, data shape: {obj[0].shape} for channel {obj[2]}")
             self.queue.put_nowait(obj)
-            # self.total_written += 1
         except Exception:
             pass
-        # print(f"Queue {self.name} size: {self.total_written}")
 
-    def get_stacked(self):
+    def get_stacked(self) -> dict | None:
+        """
+        Get all items from the queue and stack them by channel. This is used to get the data for all channels at once for plotting.
+
+        Returns:
+            dict | None: A dictionary where the keys are the channel indices and the values are tuples containing the data and timestamps for that channel.
+        """
         data_chunks = []
         time_chunks = []
         idx_chunks = []
         while True:
             try:
                 d, t, idx = self.queue.get_nowait()
-                self.total_written -= 1
-                # if self.name == 'plot':
-                # print(f"Getting data from queue {self.name}, data shape: {d.shape} for channel {idx}")
                 data_chunks.append(d)
                 time_chunks.append(t)
                 idx_chunks.append(idx)
@@ -51,8 +57,6 @@ class ClearableQueue:
                 break
         if not data_chunks:
             return None
-        # print(f"Queue {self.name} size: {self.total_written}")
-        # self.total_written = max(self.total_written, 0)
         data_all = np.concatenate(data_chunks, axis=-1)
         t_all = np.concatenate(time_chunks)
         idx_all = idx_chunks[0]
@@ -67,8 +71,6 @@ class ClearableQueue:
     def get_nowait(self):
         try:
             data = self.queue.get_nowait()
-            self.total_written -= 1
-            self.total_written = max(0, self.total_written)
             return data
         except Exception:
             return None
@@ -80,7 +82,7 @@ def dispatch_queue(results):
 
 
 def get_config_by_idx(configs, idx):
-    return
+    return configs[idx]
 
 
 def empty_queue(queue, timeout=0.01):

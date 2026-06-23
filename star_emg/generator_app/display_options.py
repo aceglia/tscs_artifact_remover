@@ -1,7 +1,5 @@
-from PyQt5.QtWidgets import QPushButton, QLabel, QLineEdit, QGridLayout, QWidget, QCheckBox
+from PyQt5.QtWidgets import QLabel, QGridLayout, QWidget, QCheckBox
 from PyQt5.QtCore import Qt
-
-from ..app.gui_utils import ChannelSelecter
 
 
 class DisplayWidget(QWidget):
@@ -22,13 +20,9 @@ class DisplayWidget(QWidget):
         self.inverse_phase_btn = QCheckBox("Apply phase inversion")
         self.inverse_phase_btn.stateChanged.connect(self.inverse_phase)
         self.inverse_phase_btn.setChecked(False)
-        self.white_noise_btn = QCheckBox("Add white noise")
-        self.white_noise_btn.stateChanged.connect(self.add_white_noise)
-        self.white_noise_btn.setChecked(False)
         layout.addWidget(self.inverse_phase_btn, 0, 0, 1, 1)
         layout.addWidget(self.show_fft_button, 1, 0, 1, 1)
-        layout.addWidget(self.white_noise_btn, 2, 0, 1, 1)
-        layout.addWidget(self.cursor_pos, 3, 0, 1, 1)
+        layout.addWidget(self.cursor_pos, 2, 0, 1, 1)
 
         layout.setAlignment(Qt.AlignTop)
         self.setLayout(layout)
@@ -40,9 +34,6 @@ class DisplayWidget(QWidget):
     def inverse_phase(self, state):
         self.phase_inversion = state != 0
         self.parent.update_template()
-
-    def add_white_noise(self, state):
-        self.parent.add_white_noise()
 
     def update_draw_params(self):
         self.parent.plot.update_draw_params(self.draw_fft)

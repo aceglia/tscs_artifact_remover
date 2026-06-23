@@ -11,12 +11,12 @@ class Solution:
     Solution object to store the decomposition output and provide methods to plot and analyse it.
     """
 
-    def __init__(self, data_rate: float = None):
+    def __init__(self, data_rate):
         """
         Initialize the Solution object.
         Parameters:
         -----------
-        data_rate: float, optional
+        data_rate: float
             The sampling rate of the signal.
         """
         self.data_init = None
@@ -118,6 +118,23 @@ class Solution:
 
         self.s = None
         self.s_reduced = None
+        self.is_empty = False
+
+    def from_dict(self, dict: dict) -> None:
+        """
+        Initialize the Solution object from a dictionary.
+        Parameters:
+        -----------
+        dict: dict
+            The dictionary containing the decomposition output.
+
+        """
+        self.output = dict["output"]
+        self.init_data = dict["init_data"]
+        if "s" in dict:
+            self.s = dict["s"]
+        if "s_reduced" in dict:
+            self.s_reduced = dict["s_reduced"]
         self.is_empty = False
 
     def get(self, key: str) -> np.ndarray:
@@ -240,6 +257,10 @@ class Solution:
         dict: dict
             The quality analysis results.
         """
+        if self.data_rate is None:
+            raise RuntimeError(
+                "Data rate is required for quality analysis. Please provide data_rate when initializing the Solution object."
+            )
         self.analysis = Quality()
         self.ground_truth = ground_truth
         self.quality = self._convert_quality_to_dict(

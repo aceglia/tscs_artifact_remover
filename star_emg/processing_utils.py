@@ -497,6 +497,12 @@ class Quality:
         """
         Compute multi-metric quality scores for raw/processed/[ground_truth] signals.
         """
+        if raw.ndim != 3:
+            raw = raw[None]
+        if processed.ndim != 3:
+            processed = processed[None]
+        if ground_truth is not None and ground_truth.ndim != 3:
+            ground_truth = ground_truth[None]
         if not self.initialized:
             self.init_shape(raw.shape)
         if ground_truth is not None:

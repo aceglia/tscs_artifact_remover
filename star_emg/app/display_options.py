@@ -5,7 +5,14 @@ from .gui_utils import ChannelSelecter
 
 
 class DisplayWidget(QWidget):
+    """
+    Parent widget to chose the display options for the plot.
+    """
+
     def __init__(self, parent=None):
+        """
+        Intiialize the widget.
+        """
         super().__init__()
         self.parent = parent
         self.frame_number = 0
@@ -65,6 +72,10 @@ class DisplayWidget(QWidget):
 
 
 class OfflineDisplayWidget(DisplayWidget):
+    """
+    Widget to chose the display options for the plot in offline processing.
+    """
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_layout()
@@ -166,6 +177,10 @@ class OfflineDisplayWidget(DisplayWidget):
 
 
 class StreamDisplayWidget(DisplayWidget):
+    """
+    Widget to chose the display options for the plot in online processing.
+    """
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_layout()

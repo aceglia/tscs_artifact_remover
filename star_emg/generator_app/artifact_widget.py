@@ -1,15 +1,11 @@
 import json
 
-from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout, QHBoxLayout, QMessageBox
+from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout, QHBoxLayout
 from PyQt5.QtCore import Qt
 
-import numpy as np
-import scipy.io as sio
 from .display_options import DisplayWidget
 from .plot_widget import Plotter
 from .template_widget import Template
-from .generator_utils import check_list
-from ..io_utils import export_csv
 from ..generator import ArtifactGenerator
 
 
@@ -59,54 +55,21 @@ class ArtifactWidget(QWidget):
             output_shape=self.data_shape,
             **self.template_options.params_widget.get_raw_values(),
         )
-        train = (
-            self.apply_white_noise(self.train_artifact)
-            if self.display_options.white_noise_btn.isChecked()
-            else self.train_artifact
-        )
-        self.plot.update_stim_train(train)
-
-    def apply_white_noise(self, data):
-        noise = np.random.normal(0, 1, data.shape) * 0.1
-        return data + noise
-
-    def add_white_noise(self):
-        self.update_template(**self.template_options.params_widget.get_short_config())
-
-    def save_file(self, path):
-        self.process_file_path = path
-        dic_to_save = {
-            "raw_data": self.plot.raw_data,
-            "processed_data_svd": self.plot.clean_svd,
-            "processed_data_notch": self.plot.clean_notch,
-            "channels": self.template_options.get_channels(),
-            "rate": self.template_options.get_rate(),
-        }
-        sio.savemat(path, dic_to_save)
-        export_csv(path, **dic_to_save)
-        self.parent.log_box.log(
-            "To use the processed file in signal you can import the txt file saved at " + path.replace(".mat", ".txt")
-        )
-        self.parent.set_saved_ok(True)
+        self.plot.update_stim_train(self.train_artifact)
 
     def load_config(self, path):
         if path == "":
             return
         with open(path, "r") as f:
             config_data = json.load(f)
-        self.set_file(config_data["file_path"], config_data["process_file_path"])
-        self.template_options.load_config(config_data["template_config"])
+        self.template_options.load_config(config_data)
 
     def save_config(self, path):
-        config = {
-            "file_path": self.file_path,
-            "process_file_path": self.process_file_path,
-            "preprocessing_params": self.template_options.remover.data_loader.filtering_params,
-            "filters_params_svd": self.template_options.svd_options.process_arguments,
-            "filters_params_notch": self.template_options.notch_options.process_arguments,
-        }
+        if path == "":
+            return
+        options = self.template_options.get_config()
         with open(path, "w") as f:
-            json.dump(config, f, indent=4)
+            json.dump(options, f, indent=4)
 
     def update_mouse_pos(self, pos):
         self.display_options.update_mouse_pos(pos)

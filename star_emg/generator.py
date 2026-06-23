@@ -200,6 +200,7 @@ class ArtifactGenerator:
         """
         Applies the generated artifact to the input signal based on the specified parameters. The method generates the artifact template and modulates it using the provided Modulator instance. The modulated artifact is then added to the input signal, and the resulting signal with artifacts is returned as a numpy array.
         """
+        self.fs = sampling_rate
         self.set_artifact_params(
             stimulation_frequency=stimulation_frequency,
             sampling_rate=sampling_rate,
@@ -260,4 +261,6 @@ class ArtifactGenerator:
         dict_to_save = self.artifact_params.copy()
         dict_to_save["init_signal"] = self.init_signal
         dict_to_save["signal_with_artifacts"] = self.signal_with_artifacts
+        dict_to_save["values"] = self.signal_with_artifacts  # To be able to use it with star_emg
+        dict_to_save["data_rate"] = self.fs
         save(dict_to_save, file_path, safe=False)

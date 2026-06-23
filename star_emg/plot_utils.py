@@ -229,6 +229,13 @@ class PlotSolution:
             if len(self.channel_names) == 0
             else self.channel_names
         )
+        if data["init_data"].ndim != 3:
+            data["init_data"] = data["init_data"][None]
+        if data["output"].ndim != 3:
+            data["output"] = data["output"][None]
+        if "groundtruth_signals" in data and data["groundtruth_signals"].ndim != 3:
+            data["groundtruth_signals"] = data["groundtruth_signals"][None]
+
         self.total_channel = data["init_data"].shape[1]
         self.total_batch = data["init_data"].shape[0]
         self.data = {}

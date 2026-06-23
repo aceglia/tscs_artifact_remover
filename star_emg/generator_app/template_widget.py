@@ -1,7 +1,5 @@
 from functools import partial
 
-import numpy as np
-
 from PyQt5.QtWidgets import (
     QWidget,
     QGridLayout,
@@ -11,7 +9,7 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit,
 )
 from PyQt5.QtCore import Qt
-from ..app.gui_utils import ChannelSelecter
+
 from .generator_utils import check_list, get_from_range
 
 
@@ -88,17 +86,11 @@ class ParamsWidget(QWidget):
         self.input_duration.setText(str(self.template_arguments["duration"]))
         self.input_duration.textChanged.connect(self.set_duration)
 
-        self.apply_button = QPushButton("Apply to current channel")
-        self.apply_button.clicked.connect(self.on_apply_button_clicked)
-        self.apply_button.setEnabled(False)
-
         self.process_button = QPushButton("Generate template")
         self.process_button.clicked.connect(self.update_template)
 
         layout.addWidget(self.input_duration, 8, 1, 1, 2)
-        layout.addWidget(self.apply_button, 10, 0, 1, 2)
         layout.addWidget(self.process_button, 9, 0, 1, 2)
-        layout.setAlignment(Qt.AlignTop)
         self.setLayout(layout)
 
     def update_transfert_text(self):
@@ -163,12 +155,6 @@ class ParamsWidget(QWidget):
     def get_option(self, option):
         return getattr(self, option)
 
-    def on_apply_button_clicked(self):
-        template_arguments = self.get_template_arguments()
-        self.parent.apply_template(self.get_template_arguments())
-        channel = self.parent.display_options.channel_selecter.get_channels()
-        self.template_arguments[channel[1]] = template_arguments.copy()
-
     def update_random_param(self):
         self.set_amplitude(self.input_amplitude.text())
         [self.set_delays(i, self.input_delay[i].text()) for i in range(2)]
@@ -190,6 +176,14 @@ class ParamsWidget(QWidget):
     def load_config(self, config):
         self.template_arguments = config
         self.set_options(config)
+        [self.input_den[i].setText(str(self.template_arguments["den"][i])) for i in range(3)]
+        [self.input_delay[i].setText(str(self.template_arguments[f"delay_{i+1}"])) for i in range(2)]
+        self.input_amplitude.setText(str(self.template_arguments["amplitude"]))
+        [self.input_factors[i].setText(str(self.template_arguments["factors"][i])) for i in range(3)]
+        self.input_freq.setText(str(self.template_arguments["stim_freq"]))
+        self.input_rate.setText(str(self.template_arguments["sampling_rate"]))
+        self.input_duration.setText(str(self.template_arguments["duration"]))
+        self.update_template()
 
     def get_short_config(self, value_item=None):
         return self.get_template_arguments(self.short_process_args, value_item)
@@ -204,46 +198,11 @@ class Template:
         self.template = None
         self.params_widget = ParamsWidget(self.parent)
 
-    def set_file(self, data_rate):
-        self.params_widget.sampling_rate = data_rate
-        self.params_widget.update_params()
-
-    def get_all_data(self):
-        return self.remover.data_loader.init_data
-
-    def get_rate(self):
-        return self.remover.data_loader.data_rate
-
-    def get_channels(self):
-        return self.remover.data_loader.channel_names
-
-    def update_frame(self, frame_number):
-        self.params_widget.update_frame(frame_number)
-
-    def get_contaminated_data(self, epochs=None, channel=None):
-        data = self.generator.output
-        if epochs is not None:
-            data = data[epochs, :, :]
-        if channel is not None:
-            data = data[:, channel, :]
-        return data
-
     def get_current_config(self, idx=None):
         return self.params_widget.get_args_by_idx(idx)
 
-    def disable(self):
-        self.svd_options.disable()
-        self.notch_options.disable()
+    def load_config(self, config):
+        self.params_widget.load_config(config)
 
-    def enable(self):
-        self.svd_options.enable()
-        self.notch_options.enable()
-
-    def get_processed_channels(self):
-        config = self.get_current_config()
-        if config is None:
-            return
-        return [i for i, conf in enumerate(config) if conf is not None]
-
-    def get_displayed_channels(self):
-        return self.parent.display_options.channel_selecter.get_channel_idxs()
+    def get_config(self):
+        return self.params_widget.template_arguments

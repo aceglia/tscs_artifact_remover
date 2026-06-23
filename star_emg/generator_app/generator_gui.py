@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from ..app.gui_utils import LogBox
-from ..app.file_dialog import LoadDialog
+from ..app.file_dialog import LoadDialog, SaveDialog
 from ..app.cache import Cache
 from ..app.popup_utils import popup_warning_split, popup_warning_continue, popup_warning_save
 from .artifact_widget import ArtifactWidget
@@ -22,21 +22,21 @@ class CustomToolBar(QToolBar):
     def __init__(self, parent=None):
         super().__init__()
         self.parent = parent
-        self.load_files_button = QAction("Load EMG file")
-        self.load_files_button.triggered.connect(self.parent._load_file)
-        self.load_files_button.setEnabled(True)
+        # self.load_files_button = QAction("Load EMG file")
+        # self.load_files_button.triggered.connect(self.parent._load_file)
+        # self.load_files_button.setEnabled(True)
         self.load_config_button = QAction("Load config")
         self.load_config_button.triggered.connect(self.parent._load_config)
         self.load_config_button.setEnabled(True)
         self.save_config_button = QAction("Save")
         self.save_config_button.triggered.connect(self.parent.save)
-        self.save_config_button.setEnabled(False)
+        self.save_config_button.setEnabled(True)
         self.save_as_config_button = QAction("Save As")
         self.save_as_config_button.triggered.connect(self.parent.save_as)
-        self.save_as_config_button.setEnabled(False)
+        self.save_as_config_button.setEnabled(True)
         self.quit_button = QAction("Quit")
         self.quit_button.triggered.connect(self.parent.quit)
-        self.addAction(self.load_files_button)
+        # self.addAction(self.load_files_button)
         # self.addAction(self.save_files_button)
         self.addAction(self.load_config_button)
         self.addAction(self.save_config_button)
@@ -66,7 +66,7 @@ class GUI(QMainWindow):
         self.saved_ok = True
         self._split = False
         self.save_as_popup = None
-        self.default_save_name = None
+        self.config_save_path = None
 
     def _init_layout(self):
         self.clear_log_button = QPushButton("Clear Log")
@@ -80,29 +80,7 @@ class GUI(QMainWindow):
         main_splitter.addWidget(splitter)
         main_layout.addWidget(main_splitter)
         self.central_widget.setLayout(main_layout)
-
-    def _load_file(self):
-        if not self.saved_ok:
-            popup_warning_continue(
-                "You didn't save your work, it will be erased, do you want to continue?", "Warning", self.popup_continue
-            )
-            if not self._continue:
-                return
-        LoadDialog(
-            parent=self,
-            caption="Load EMG file",
-            filter="Matlab format (version < 7) (*.mat);;Text file (*.txt);; Biosiglive format (*.bio)",
-            load_method=self.processing_widget.set_file,
-        )
-        # self.toolbar.save_files_button.setEnabled(True)
-        self.default_save_name = self.processing_widget.file_path.replace(".mat", "")
-        self.toolbar.save_config_button.setEnabled(True)
-        self.toolbar.save_as_config_button.setEnabled(True)
-
-    def _save_file(self):
-        file_path = self.default_save_name + "_with_artifacts.mat"
-        self.log_box.log(f"Saving file at: {file_path}")
-        self.processing_widget.save_file(file_path)
+        self.save_dialog = None
 
     def _load_config(self):
         if not self.saved_ok:
@@ -115,16 +93,12 @@ class GUI(QMainWindow):
             parent=self,
             caption="Load configuration file",
             filter="File type (*.json)",
-            load_method=self.processing_widget.load_config,
+            load_method=self.generator_widget.load_config,
         )
-        self.default_save_name = self.processing_widget.file_path.replace(".mat", "")
-        self.toolbar.save_config_button.setEnabled(True)
-        self.toolbar.save_as_config_button.setEnabled(True)
 
-    def _save_config(self):
-        file_path = self.default_save_name.replace(".mat", "_generator_configuration.json")
+    def _save_config(self, file_path):
         self.log_box.log(f"Saving configuration file at: {file_path}")
-        self.processing_widget.save_config(file_path)
+        self.generator_widget.save_config(file_path)
 
     def quit(self):
         if not self.saved_ok:
@@ -154,16 +128,13 @@ class GUI(QMainWindow):
             self._quit = False
 
     def save_as(self):
-        text, ok = QInputDialog.getText(
+        self.save_dialog = SaveDialog(
             self,
-            "Export option",
-            "Chose a basis name for data export:",
-            QLineEdit.Normal,
-            self.default_save_name.split("/")[-1],
+            "Chose a path where to save the configuration.",
+            filter="*.json",
+            suffix=".json",
+            save_method=self._save_config,
         )
-        if ok:
-            self.default_save_name = "/".join(self.default_save_name.split("/")[:-1]) + "/" + text
-            self.save()
 
     def show_split_windows(self, text):
         popup_warning_split(text, "File loading warning", self.popup_split)
@@ -185,9 +156,11 @@ class GUI(QMainWindow):
         self.menu_bar.gognio_action.setEnabled(False)
 
     def save(self):
+        if self.save_dialog is None or self.save_dialog.filename is None:
+            self.save_as()
+            return
         try:
-            self._save_file()
-            self._save_config()
+            self._save_config(self.save_dialog.filename)
         except Exception as e:
             self.log_box.log("Error occured while saving the files: ", e)
 

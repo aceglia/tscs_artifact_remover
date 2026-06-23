@@ -44,13 +44,21 @@ def popup_warning_split(text, title, fct):
     wind.exec_()
 
 
-def save_popup(text, fct):
-
-    pass
-
-
 class FilterDialog(QDialog):
+    """
+    Windows for the prefiltering configuration when loading a file. The data rate can be als provided if not included in the file.
+    """
+
     def __init__(self, parent=None, fs=None):
+        """
+        Initialize the dialog.
+        Parameters:
+        -----------
+        parent: QWidget, optional
+            The parent widget of the dialog.
+        fs: float, optional
+            The sample rate of the data. If not provided, it will be set to the value provided in the file.
+        """
         super().__init__(parent)
         self.setWindowTitle("Data pre-filtering")
         layout = QGridLayout()
@@ -99,6 +107,10 @@ class FilterDialog(QDialog):
 
 
 class ChannelsPopup(QDialog):
+    """
+    Windows for the configuration of the channels when setting up a new stream.
+    """
+
     def __init__(self, channels=None):
         super().__init__()
         self.setWindowTitle("Channels configuration")

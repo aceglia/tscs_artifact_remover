@@ -78,6 +78,7 @@ def load_txt_file(path: str, delimiter: str = "\t") -> Tuple[ArrayLike, List[str
     tuple[np.ndarray, list[str], np.ndarray, float]
     """
     frames: List[List[List[str]]] = []
+    data_rate = None
 
     with open(path, "r") as file:
         reader = csv.reader(file, delimiter=delimiter)
@@ -96,18 +97,34 @@ def load_txt_file(path: str, delimiter: str = "\t") -> Tuple[ArrayLike, List[str
             frames.append(rows)
 
     all_len = [len(row) for row in frames]
-    channel_names = frames[0][:1][0][1:]
+    channel_names = frames[0][:1][0]
 
     frames = [row[1 : min(all_len)] for row in frames]
 
     array = np.array(frames).astype(float)
     array = np.swapaxes(array, 1, 2)
-
-    data_rate = 1 / np.mean(np.diff(array[:, 0, :], axis=-1))
-    array = array[:, 1:, :]
+    is_time_vector = check_for_time(array)
+    if is_time_vector:
+        data_rate = 1 / np.mean(np.diff(array[:, 0, :], axis=-1))
+        array = array[:, 1:, :]
+        channel_names = channel_names[1:]
     frame_idx = np.arange(0, len(frames))
 
     return array, channel_names, frame_idx, data_rate
+
+
+def check_for_time(data: np.ndarray) -> bool:
+    """
+    Check if the first column of the array is a time vector.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        The input array to check.
+    """
+    if data.shape[1] < 2:
+        return False
+    return np.allclose(data[0, 0, 1], data[0, 0, 0] + np.diff(data[0, 0, :]).mean(), atol=1e-6)
 
 
 def load_csv_file(path: str, delimiter: str = "\t") -> Tuple[ArrayLike, List[str], int, float]:

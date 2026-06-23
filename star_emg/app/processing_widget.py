@@ -11,7 +11,7 @@ from scipy.fft import rfftfreq
 import scipy.io as sio
 
 from biosiglive.streaming.utils import CircularBuffer
-from .stream_utils import ClearableQueue
+from .stream_utils import CustomQueue
 from .remover_widget import StreamRemover, OfflineRemover
 from ..rt_automatic_remover import RtArtifactRemover
 from .display_options import StreamDisplayWidget, OfflineDisplayWidget
@@ -25,12 +25,24 @@ from .popup_utils import FilterDialog
 
 
 class ProcessingWidget(QWidget):
+    """
+    Parent class for the processing widget, which will be used for both offline and online processing.
+    It contains the common methods for both types of processing.
+    """
+
     def __init__(self, parent=None):
+        """
+        Initialize the class with the parent widget.
+        The parent widget is the main window of the application, it will be used to access the log box and the toolbar.
+        """
         super().__init__()
         self.parent = parent
         self.stream_widget = None
 
     def _init_layout(self):
+        """
+        Initialize the layout of the widget.
+        """
         right_panel = QWidget()
         right_layout = QVBoxLayout()
 
@@ -49,6 +61,16 @@ class ProcessingWidget(QWidget):
         self.layout().addWidget(splitter)
 
     def update_filter(self, name="notch"):
+        """
+        Update the filter and update the plot and display options. The filter name is passed as a parameter.
+        Parameters:
+        -----------
+        name: str
+            The name of the filter to update.
+        Returns:
+        --------
+        None
+        """
         self.remover_options.update_filter(name)
         self.plot.update_filter(name)
         self.plot.update_config_button(self.remover_options.get_current_config())
@@ -60,6 +82,17 @@ class ProcessingWidget(QWidget):
         self.remover_options.show_config("")
 
     def update_mouse_pos(self, pos):
+        """
+        Update the mouse position. It is used to display the value within a plot.
+
+        Parameters:
+        -----------
+        pos: tuple
+            The mouse position. It is used to display the value within a plot.
+        Returns:
+        --------
+        None
+        """
         self.display_options.update_mouse_pos(pos)
 
     def get_processed_channels(self):
@@ -68,6 +101,16 @@ class ProcessingWidget(QWidget):
 
 class OfflineProcessingWidget(ProcessingWidget):
     def __init__(self, parent=None):
+        """
+        Initialize the offline processing widget based on the parent widget.
+        Parameters:
+        -----------
+        parent: QMainWindow
+            The main window of the application.
+        Returns:
+        --------
+        None
+        """
         super().__init__(parent)
         self.remover_options = OfflineRemover(self)
         self.display_options = OfflineDisplayWidget(self)
@@ -86,12 +129,25 @@ class OfflineProcessingWidget(ProcessingWidget):
         self.quality_svd = Quality()
 
     def update_frame(self, frame_number):
+        """
+        Update the batch number and update the plot.
+        """
         self.plot.update_frame(frame_number, update_time=True)
         self.plot.update_config_button(self.remover_options.get_current_config())
         self.remover_options.update_frame(frame_number)
         self.remover_options.show_config("")
 
     def process(self, **kwargs):
+        """
+        Process the data with the specified parameters.
+        Parameters:
+        -----------
+        kwargs: dict
+            The parameters for the processing.
+        Returns:
+        --------
+        None
+        """
         kwargs["batch_idxs"] = ensure_list(self.display_options.frame_number)
         # self.remover_options.disable()
         self.parent.log_box.log("Processing data...")
@@ -116,6 +172,18 @@ class OfflineProcessingWidget(ProcessingWidget):
             self.threadpool.start(worker)
 
     def _on_processing_done(self, result, kwargs):
+        """
+        To do when the processing is done, mostly for the multiprocessing case.
+        Parameters:
+        -----------
+        result: tuple
+            The results of the processing.
+        kwargs: dict
+            The parameters for the processing.
+        Returns:
+        --------
+        None
+        """
         list_results, init_shape = result
         solution = Solution(self.remover_options.remover.data_loader.data_rate)
         fct = solution.from_notch_filter if kwargs["notch_filter"] else solution.from_signal_decomposition
@@ -139,6 +207,29 @@ class OfflineProcessingWidget(ProcessingWidget):
 
     @staticmethod
     def _thread_safe_process(fct, data, data_rate, batch_idxs, channel_idxs, process_window, **kwargs):
+        """
+        A thread-safe version of the processing function. It uses a queue to pass data between threads.
+        Parameters:
+        -
+        fct: function
+            The function to process the data.
+        data: numpy.ndarray
+            The data to process.
+        data_rate: float
+            The data rate.
+        batch_idxs: list
+            The batch indices to process.
+        channel_idxs: list
+            The channel indices to process.
+        process_window: int
+            The size of the processing window.
+        **kwargs: dict
+            The parameters for the processing.
+        Returns:
+        --------
+        tuple
+            The results of the processing.
+        """
         if batch_idxs:
             if not isinstance(batch_idxs, list):
                 batch_idxs = [batch_idxs]
@@ -163,6 +254,22 @@ class OfflineProcessingWidget(ProcessingWidget):
         return list_results, _init_data_shape
 
     def set_file(self, file_list, process_data_file=None, filtering_params=None):
+        """
+        Load the file and set the parameters.
+        Parameters:
+        -----------
+        file_list: list or str
+            The path to the file.
+        process_data_file: str, optional
+            The path to the file containing the processed data if loaded from a configuration file.
+        filtering_params: dict, optional
+            The parameters for the filtering if loaded from a configuration file.
+
+        Returns:
+        --------
+        None
+
+        """
         if filtering_params is None:
             self.filter_dialog = FilterDialog(self)
             if self.filter_dialog.exec_() == 0:
@@ -196,14 +303,25 @@ class OfflineProcessingWidget(ProcessingWidget):
             cleaned_notch=clean_notch,
             cleaned_svd=clean_svd,
         )
-
         self.parent.toolbar.enable_filter_menu()
-        self.parent.toolbar.radio_svd_filter_button.setEnabled(True)
-        self.parent.toolbar.radio_notch_filter_button.setEnabled(False)
+        self.parent.toolbar.radio_svd_filter_button.setEnabled(False)
+        self.parent.toolbar.radio_notch_filter_button.setEnabled(True)
         self.update_frame(0)
-        self.update_filter("notch")
+        self.update_filter("svd")
 
     def update_processed_plot(self, batch_idxs, channel_idxs):
+        """
+        Update the plot with the processed data.
+        Parameters:
+        -----------
+        batch_idxs: list
+            The batch indices to process.
+        channel_idxs: list
+            The channel indices to process.
+        Returns:
+        --------
+        None
+        """
         cleaned_data = self.remover_options.get_cleaned_data()
         self.plot.update_data(
             cleaned_data, ensure_list(channel_idxs), ensure_list(batch_idxs), data_type="clean", auto_range=False
@@ -211,6 +329,16 @@ class OfflineProcessingWidget(ProcessingWidget):
         self.plot.enable_config_button(channel_idxs)
 
     def save_file(self, path):
+        """
+        Save the processed and raw data to a file.
+        Parameters:
+        -----------
+        path: str
+            The path to the file.
+        Returns:
+        --------
+        None
+        """
         self.process_file_path = path
         dic_to_save = {
             "raw_data": self.plot.raw_data,
@@ -227,6 +355,16 @@ class OfflineProcessingWidget(ProcessingWidget):
         self.parent.set_saved_ok(True)
 
     def load_config(self, path):
+        """
+        Load a configuration file generated from this app and set the files and parameters accordingly.
+
+        Parameters:
+        -----------
+        path: str
+            The path to the configuration file. Returns:
+        --------
+        None
+        """
         if path == "":
             self.canceled = True
             return
@@ -239,12 +377,38 @@ class OfflineProcessingWidget(ProcessingWidget):
         self.remover_options.notch_options.load_config(config_data["filters_params_notch"])
 
     def get_process_data(self, file_path):
+        """
+        Get the processed data from a file.
+        Parameters:
+        -----------
+        file_path: str
+            The path to the file.
+        Returns:
+        --------
+        tuple
+            The processed data. Returns:
+        --------
+        tuple
+            The processed data. Returns:
+        """
         if file_path is None:
             return
         data = sio.loadmat(file_path)
         return data["processed_data_svd"], data["processed_data_notch"]
 
     def save_config(self, path):
+        """
+        Save the configuration file in JSON format.
+
+        Parameters:
+        -----------
+        path: str
+            The path to the configuration file.
+
+        Returns:
+        --------
+        None
+        """
         config = {
             "file_path": self.file_path,
             "process_file_path": self.process_file_path,
@@ -256,6 +420,18 @@ class OfflineProcessingWidget(ProcessingWidget):
             json.dump(config, f, indent=4)
 
     def _convert_quality_to_dict(self, quality):
+        """ "
+        Convert the quality results to a dictionary for display.
+        Parameters:
+        -----------
+        quality: list
+            The quality results.
+
+        Returns:
+        --------
+        dict
+            The quality results in a dictionary format.
+        """
         dict_to_return = {
             "kurtosis": [quality[0][0], quality[1][0]],
             "Line Length": [quality[0][1], quality[1][1]],
@@ -265,6 +441,15 @@ class OfflineProcessingWidget(ProcessingWidget):
         return {k: [np.round(float(v[0]), 3), np.round(float(v[1]), 3)] for k, v in dict_to_return.items()}
 
     def show_config(self, idx):
+        """
+        Show the configuration and quality results (if applicable) for the specified channel index.
+        Parameters:
+        -----------
+        idx: int
+            The channel index to show the configuration and quality results for. Returns:
+        --------
+        None
+        """
         quality = self.quality_svd if self.remover_options.current_filter == "svd" else self.quality_notch
         frame = (
             self.remover_options.svd_options.current_frame
@@ -301,6 +486,18 @@ class OfflineProcessingWidget(ProcessingWidget):
 
 class StreamProcessingWidget(ProcessingWidget):
     def __init__(self, parent=None, process_rate=60):
+        """
+        Initialize the stream processing widget based on the parent widget and the processing rate.
+
+        Parameters:
+        -----------
+        process_rate: int
+            The expected processing rate in Hz.
+
+        Returns:
+        --------
+        None
+        """
         super().__init__(parent)
         self.counter = 0
         self.last_processed_counter = 0
@@ -346,6 +543,32 @@ class StreamProcessingWidget(ProcessingWidget):
         channels_idxs,
         acquisition_rate,
     ):
+        """
+        Start a process which will be kept active during the stream to process data in a while loop maner. This function is called by the multiprocessing module, it is threadsafe.
+        Parameters:
+        -----------
+        queue_in: multiprocessing.Queue
+            The input queue for the data.
+        queue_out: multiprocessing.Queue
+            The output queue for the processed data.
+        process_args_event: multiprocessing.Event
+            The event to signal that the processing arguments have changed.
+        queue_process_args: multiprocessing.Queue
+            The queue to receive the processing arguments.
+        runing_event: multiprocessing.Event
+            The event to signal the process to start.
+        buff_len: int
+            The length of the buffer to store the data. It should be long enough to contain the processing window.
+        channels_idxs: list
+            The list of channel indices to process within this process.
+        acquisition_rate: float
+            The acquisition rate in Hz.
+
+        Returns:
+        --------
+        None
+
+        """
         channel_configs = None
         channel_configs_glob = {i: {} for i in channels_idxs}
         process_buffer = {i: CircularBuffer(1, buff_len) for i in channels_idxs}
@@ -416,10 +639,49 @@ class StreamProcessingWidget(ProcessingWidget):
 
     @staticmethod
     def _process_worker(fct, data, t, process_args, idx, n_new_data):
+        """
+        Process the data using the provided function and arguments. This function is called by the multiprocessing module, it is threadsafe.
+        Parameters:
+        -----------
+        fct: function
+            The function to process the data.
+        data: numpy.ndarray
+            The data to process.
+        t: numpy.ndarray
+            The time corresponding to the data.
+        process_args: dict
+            The arguments for the processing function.
+        idx: int
+            The index of the channel being processed.
+        n_new_data: int
+            The number of new data points to return.
+
+        Returns:
+        --------
+        tuple
+            The processed data, the corresponding time, and the channel index.
+        """
         res = fct(data=data, **process_args)
         return res[0][-n_new_data:], t[-n_new_data:], idx
 
     def init_stream(self, display_window, queue_process=None, is_running_event=None, channels_mapping=None):
+        """
+        Initialize the stream widget for processing.
+        Parameters:
+        -----------
+        display_window: int
+            The size of the display window in seconds.
+        queue_process: list of multiprocessing.Queue
+            The list of input queues for the data for each process.
+        is_running_event: multiprocessing.Event
+            The event to signal the processes to start.
+        channels_mapping: list of list
+            The list of channel indices for each process.
+
+        Returns:
+        --------
+        None
+        """
         time = np.arange(0, display_window)
         self.display_window = display_window
         self.queue_process = queue_process
@@ -427,9 +689,9 @@ class StreamProcessingWidget(ProcessingWidget):
         self.channels_mapping = channels_mapping
         self.n_process = self.n_process if len(self.channels) > 1 else 1
         self.n_process = min(self.n_process, int(np.ceil(len(self.channels) / 2)))
-        self.queue_plot = {i: ClearableQueue(maxwrite=2000, name="plot") for i in range(len(self.channels))}
+        self.queue_plot = {i: CustomQueue(name="plot") for i in range(len(self.channels))}
         self.process_args_event = [mp.Event() for _ in range(self.n_process)]
-        self.queue_process_args = [ClearableQueue(maxwrite=1) for _ in range(self.n_process)]
+        self.queue_process_args = [CustomQueue(name="process_args") for _ in range(self.n_process)]
         self.parent.log_box.log(f"Starting stream with {self.n_process} processes...")
         self.fft_freqs = rfftfreq(display_window, 1 / self.acquisition_rate)
         self.display_options.set_file_params(self.channels)
@@ -446,11 +708,14 @@ class StreamProcessingWidget(ProcessingWidget):
         self.parent.toolbar.enable_filter_menu()
         self.parent.toolbar.radio_svd_filter_button.setEnabled(True)
         self.parent.toolbar.radio_notch_filter_button.setEnabled(False)
-        self.update_filter("notch")
+        self.update_filter("svd")
         self.running = True
         self.start_processing()
 
     def start_processing(self):
+        """
+        Start the sub-process for processing the data.
+        """
         self.processes = []
         for i in range(len(self.queue_process)):
             queues_tmp = {ch: self.queue_plot[ch] for ch in self.channels_mapping[i]}
@@ -481,12 +746,26 @@ class StreamProcessingWidget(ProcessingWidget):
         return self.stream_widget.channels
 
     def stop_processing(self):
+        """
+        Stop the processing sub-processes.
+        """
         for p in self.processes:
             p.terminate()
             p.join()
         self.processing = False
 
-    def update_filter(self, name="notch"):
+    def update_filter(self, name="svd"):
+        """
+        Update the filter and update the plot and process arguments accordingly.
+        Parameters:
+        -----------
+        name: str
+            The name of the filter to use. It should be either "svd" or "notch".
+
+        Returns:
+        --------
+        None
+        """
         # if self.timer.isActive():
         #     self.stop_processing()
         self.remover_options.update_filter(name)
@@ -502,6 +781,18 @@ class StreamProcessingWidget(ProcessingWidget):
         #     self.start_processing()
 
     def set_paused(self, paused):
+        """
+        Set the paused state of the plot widget.
+        Parameters:
+        -----------
+        paused: bool
+            The paused state of the plot widget.
+
+
+        Returns:
+        --------
+        None
+        """
         if paused:
             self.plot.pause_plot(True)
         else:

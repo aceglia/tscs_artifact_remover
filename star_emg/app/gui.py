@@ -56,10 +56,11 @@ class CustomToolBar:
         """
         self.filter_menu = self.menu_bar.addMenu("Filter")
         self.radio_notch_filter_button = self.filter_menu.addAction("Notch filter")
-        self.radio_notch_filter_button.setEnabled(False)
+        self.radio_notch_filter_button.setEnabled(True)
         self.radio_notch_filter_button.triggered.connect(self.parent.notch_selected)
+
         self.radio_svd_filter_button = self.filter_menu.addAction("SVD filter")
-        self.radio_svd_filter_button.setEnabled(True)
+        self.radio_svd_filter_button.setEnabled(False)
         self.radio_svd_filter_button.triggered.connect(self.parent.svd_selected)
         self.disable_filter_menu()
 
@@ -139,12 +140,18 @@ class GUI(QMainWindow):
         self.central_widget.setLayout(main_layout)
 
     def go_stream_mode(self):
+        """
+        Set up widget for stream mode.
+        """
         self.toolbar.go_offline_button.setEnabled(True)
         self.toolbar.go_stream_button.setEnabled(False)
         # replace processing widget by stream widget
         self.stack.setCurrentWidget(self.stream_processing_widget)
 
     def go_offline_mode(self):
+        """
+        Set up widget for offline mode.
+        """
         self.toolbar.go_offline_button.setEnabled(False)
         self.toolbar.go_stream_button.setEnabled(True)
         self.stack.setCurrentWidget(self.processing_widget)

@@ -4,12 +4,10 @@ from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QDialo
 from PyQt5.QtCore import QObject, pyqtSignal
 
 import numpy as np
-from .gui_utils import ensure_list, Worker
-from ..io_utils import export_csv
 import multiprocessing as mp
 from ..processing_utils import Quality
 from .popup_utils import ChannelsPopup
-from .stream_utils import ClearableQueue
+from .stream_utils import CustomQueue
 from biosiglive.streaming.async_server import AsyncTCPServer
 import asyncio
 
@@ -19,6 +17,10 @@ class Bridge(QObject):
 
 
 class StreamWidget(QWidget):
+    """
+    Class that handles the stream widget in the GUI.
+    """
+
     def __init__(self, parent=None):
         super().__init__()
         self.parent = parent
@@ -33,8 +35,10 @@ class StreamWidget(QWidget):
         self.paused = False
 
     def task(self, d, t):
-        # shape = d.shape
-        # self.bridge.data_received.emit(shape)
+        """
+        The task that is called within the server after each new data received.
+        It put the data into the queue for each channel to be processed by the main process and displayed in the GUI.
+        """
         if not self.is_running_event.is_set():
             self.is_running_event.set()
         [self.queue_process[i].put_nowait((d[chan], t, chan)) for i, chan in self.channels_mapping.items()]
@@ -83,6 +87,9 @@ class StreamWidget(QWidget):
         self.setLayout(self.layout)
 
     def _play(self):
+        """
+        Start the stream.
+        """
         self.stop_button.setEnabled(True)
         self.pause_button.setEnabled(True)
         self.play_button.setEnabled(False)
@@ -95,7 +102,7 @@ class StreamWidget(QWidget):
             self.channels_mapping = {i: [] for i in range(self.n_process)}
             for i in range(len(self.channels)):
                 self.channels_mapping[i % self.n_process].append(i)
-            self.queue_process = [ClearableQueue(maxwrite=2000) for _ in range(self.n_process)]
+            self.queue_process = [CustomQueue(maxwrite=2000) for _ in range(self.n_process)]
             self.is_running_event = mp.Event()
             thread = threading.Thread(target=self._run_asyncio, daemon=True)
             thread.start()
@@ -110,23 +117,35 @@ class StreamWidget(QWidget):
             self.paused = False
 
     def _run_asyncio(self):
+        """
+        Function to run the asyncio server.
+        """
         self.server = AsyncTCPServer(self.address, self.port, buffer_length=self.display_window)
         self.server.init_buffer(len(self.channels), dt=1 / self.acquisition_rate)
         asyncio.run(self.server.start(task=self.task))
 
     def _stop(self):
+        """
+        Stop the stream.
+        """
         self.play_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
         asyncio.run(self.server.stop())
 
     def _pause(self):
+        """
+        Pause the stream.
+        """
         self.play_button.setEnabled(True)
         self.pause_button.setEnabled(False)
         self.paused = True
         self.parent.set_paused(True)
 
     def _set_channels(self):
+        """
+        Set the channels for the stream so that the server can know how many channels are beeing streamed.
+        """
         popup = ChannelsPopup(channels=self.channels)
         if popup.exec_() == QDialog.Accepted:
             self.channels = popup.channels
@@ -134,6 +153,9 @@ class StreamWidget(QWidget):
         self.play_button.setEnabled(self.channels is not None)
 
     def get_data(self, n_chunks=None):
+        """
+        Get the data from the server buffer. This is used to get the data for all channels at once for plotting.
+        """
         if self.server is not None and self.server.buffer is not None:
             return self.server.buffer.get()
         else:

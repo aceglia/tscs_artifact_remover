@@ -5,7 +5,9 @@ from star_emg.solution import Solution
 
 if __name__ == "__main__":
     path_file = r"data\test001.txt"
-    artifact_remover = RtArtifactRemover(window_size=500, data=path_file, signal_filter=False, center=True, chunk_size=20, data_rate=2000)
+    artifact_remover = RtArtifactRemover(
+        window_size=500, data=path_file, signal_filter=False, center=True, chunk_size=20, data_rate=2000
+    )
     is_data = True
     global_output = None
     global_intput = None
@@ -27,4 +29,3 @@ if __name__ == "__main__":
     sol.from_dict(sol_dict)
     sol.analyse()
     sol.plot(signals=True, fft=True, singular_values=False, stack_batch=False, show_analysis=True)
-

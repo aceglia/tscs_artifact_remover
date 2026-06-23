@@ -28,9 +28,14 @@ class LogBox(QPlainTextEdit):
     def log(self, message: str) -> None:
         """
         Log message to the log box.
-        :param message: Message to log.
-        :type message: str
-        :return: None
+        Parameters:
+        -----------
+        message: str
+            Message to log.
+
+        Returns:
+        --------
+        None
         """
         self.appendPlainText(self._add_current_time(message))
         self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
@@ -39,10 +44,13 @@ class LogBox(QPlainTextEdit):
     def _add_current_time(self, message: str) -> str:
         """
         Add current time to the message as prefix.
-        :param message: Message to add time to.
-        :type message: str
-        :return: Message with current time prefix.
-        :rtype: str
+        Parameters:
+        -----------
+        message: str
+            Message to add the current time to.
+        Returns:
+        --------
+        str: Message with current time as prefix.
         """
         return f"[{str(datetime.datetime.now())}] {message}"
 
@@ -50,7 +58,6 @@ class LogBox(QPlainTextEdit):
     def calling_fct():
         """
         Dummy function to be called after logging a message.
-        :return: None
         """
         return
 
@@ -58,9 +65,13 @@ class LogBox(QPlainTextEdit):
 def ensure_list(x: any):
     """
     Function to ensure that x is a list.
-    :param x: Input variable.
-    :type x: any
-    :return: List containing x if x is not already a list, otherwise x.
+    Parameters:
+    -----------
+    x: any
+        Object to check.
+    Returns:
+    --------
+    list: x if x is already a list, else [x].
     """
     return x if isinstance(x, list) else [x]
 
@@ -80,7 +91,27 @@ def check_list(text):
 
 
 class ChannelSelecter(QWidget):
+    """
+    Widget for selecting channels.
+    """
+
     def __init__(self, parent=None, channel_list=[], for_display=True, only_one=False):
+        """
+        Initialize the ChannelSelecter widget.
+        Parameters:
+        -----------
+        parent: QWidget, optional
+            The parent widget of the ChannelSelecter.
+        channel_list: list, optional
+            The list of channels to select from.
+        for_display: bool, optional
+            Whether the channel selecter is for display or for processing. If for display, the title of the widget will be "Select channel(s) to display", else it will be "Select channel(s) to process".
+        only_one: bool, optional
+            Whether only one channel can be selected.
+        Returns:
+        --------
+        None
+        """
         super().__init__()
         title = "Select channel(s) to display" if for_display else "Select channel(s) to process"
         self.setWindowTitle(title)
@@ -138,6 +169,13 @@ class ChannelSelecter(QWidget):
                 checkbox.setChecked(False)
 
     def get_selected_channels(self):
+        """
+        Return the list of selected channels.
+
+        Returns:
+        --------
+        list: List of selected channels.
+        """
         selected_channels = []
         for c, checkbox in enumerate(self.checkbox_list):
             if checkbox.isChecked():
@@ -145,10 +183,22 @@ class ChannelSelecter(QWidget):
         return selected_channels
 
     def get_channel_idxs(self):
+        """
+        Get the indexs of the selected channels.
+        Returns:
+        --------
+        list: List of indexs of the selected channels.
+        """
         channels = self.get_selected_channels()
         return [i[0] for i in channels]
 
     def get_channel_names(self):
+        """
+        Get the names of the selected channels.
+        Returns:
+        --------
+        list: List of names of the selected channels.
+        """
         channels = self.get_selected_channels()
         return [i[1] for i in channels]
 
@@ -165,12 +215,6 @@ class Worker(QRunnable):
     """Worker thread.
 
     Inherits from QRunnable to handler worker thread setup, signals and wrap-up.
-
-    :param callback: The function callback to run on this worker thread.
-                     Supplied args and kwargs will be passed through to the runner.
-    :type callback: function
-    :param args: Arguments to pass to the callback function
-    :param kwargs: Keywords to pass to the callback function
     """
 
     def __init__(self, fn, *args, **kwargs):

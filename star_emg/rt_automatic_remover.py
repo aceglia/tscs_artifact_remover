@@ -48,12 +48,12 @@ class RtArtifactRemover(ArtifactRemover):
         self.update_svd_every = update_svd_every
 
         self.buffer = CircularBuffer(1, window_size)
-
+        self.solution = None
         self.last_rejected = None
         self.streamer = DataStreamer(data=data, offline=self.offline, **data_loader_kwargs)
-
-        # The solution for now is only used for offline mode to not overload the memory for long streaming.
-        self.solution = Solution()
+        if self.streamer.init_data is not None:
+            self.output = np.zeros_like(self.streamer.init_data)
+            self.solution = Solution(data_rate=self.streamer.data_rate)
         self.idx = 0
 
     def get_init_signal(self) -> np.ndarray | None:
@@ -65,7 +65,7 @@ class RtArtifactRemover(ArtifactRemover):
         return self.streamer.init_data
 
     # TODO: Implement multiprocessing to process multiple channels like in the APP.
-    def process_chunck(self, data: np.ndarray, **process_kwargs) -> np.ndarray | None:
+    def process_chunk(self, data: np.ndarray, **process_kwargs) -> np.ndarray | None:
         """
         This process a chunk of data. The internal buffer handle the processing window size so the user can provide only the chunck.
         It is meant to be called in stream settings. Only one channel can be process at the same time.
@@ -98,7 +98,7 @@ class RtArtifactRemover(ArtifactRemover):
             self.buffer.append(data)
             data_tmp, _ = self.buffer.get()
             data_tmp = self.streamer.data_loader.apply_filtering(data_tmp, offline=False)
-            if process_kwargs["notch_filter"]:
+            if "notch_filter" in process_kwargs and process_kwargs["notch_filter"]:
                 process_kwargs["offline"] = False
             process_kwargs["rejected_idx"] = None if self.idx % self.update_svd_every == 0 else self.last_rejected
             output = self._remove_artifact_from_windows(data_tmp, **process_kwargs)
@@ -212,7 +212,7 @@ class RtArtifactRemover(ArtifactRemover):
             _, data_chunk = self.streamer.get_next_chunk(self.streamer.chunk_size)
             if data_chunk is None:
                 break
-            self.process_chunck(data_chunk, **process_kwargs)
+            self.process_chunk(data_chunk, **process_kwargs)
             self.idx += self.streamer.chunk_size
             count += 1
 

@@ -1,6 +1,5 @@
 import pyqtgraph as pg
 import numpy as np
-from time import perf_counter, time
 from scipy.fft import rfft, rfftfreq
 from PyQt5.QtWidgets import QGraphicsProxyWidget, QPushButton
 from PyQt5.QtCore import Qt
@@ -8,7 +7,23 @@ from biosiglive.streaming.utils import CircularBuffer
 
 
 class ChannelPlot:
+    """
+    Class use to plot a channel of data. This class is used for every channel to plot.
+    This class will store the raw and process data to be plot.
+    """
+
     def __init__(self, parent, channel=None, idx=None):
+        """
+        Initialize the ChannelPlot object.
+        Parameters:
+        -----------
+        parent: Plotter
+            The parent Plotter object.
+        channel: str, optional
+            The name of the channel to plot. If None, the channel will be named "Channel {idx}".
+        idx: int, optional
+            the index of the channel to plot. If None, the index will be set to 0.
+        """
         self.parent = parent
         self.time = None
         self.freqs = None
@@ -34,6 +49,18 @@ class ChannelPlot:
         self.window_reached = False
 
     def init_plot(self, data, time, rate):
+        """
+        Initialize the plot for the channel.
+        Parameters:
+        -----------
+        data: tuple
+            The raw and clean data to plot. The first element is the raw data, the second element is the clean data.
+        time: tuple
+            The time corresponding to the raw and clean data. The first element is the time for the raw data, the second element is the time for the clean data.
+        rate: int
+            The sampling rate of the data.
+
+        """
         self.time = time[0]
         self.freqs = rfftfreq(len(data[0]), d=1 / rate)
         self.plot_item = self.parent.addPlot(row=self.idx, col=0)
@@ -77,18 +104,42 @@ class ChannelPlot:
         self.current_start_time = 0
 
     def on_info_button(self):
+        """
+        Show the parameters and the analysis.
+        """
         self.parent.show_config(self.idx)
 
     def set_visible(self, visible):
+        """
+        Set a channel plot visible or invisible.
+        """
         self.proxy_btn.setVisible(visible)
         self.plot_item.setVisible(visible)
         self.visible = visible
 
     def _set_curve_params(self):
+        """
+        Set the parameters of the curves (color, width, etc.) according to the visibility of the raw and clean data.
+        """
         for c, curve in enumerate(self.curves):
             curve.setPen([self.pen_raw, self.pen_clean][c])
 
     def update_plot(self, data=None, data_type="both", auto_range=True, time=None):
+        """
+        Update the current plot with new data.
+        If data is None, the plot will be updated with the current raw and clean data stored in the object.
+
+        Parameters:
+        -----------
+        data: tuple, optional
+            The raw and clean data to plot. The first element is the raw data, the second element is the clean data.
+        data_type: str, optional
+            The type of data to plot. Can be "raw", "clean", or "both". Default is "both".
+        auto_range: bool, optional
+            Whether to automatically adjust the range of the plot. Default is True.
+        time: tuple, optional
+            The time corresponding to the raw and clean data. The first element is the time for the raw data, the second element is the time for the clean data. If None, the current time stored in the object will be used.
+        """
         if time is not None:
             self.time = time
         if data is not None:
@@ -133,14 +184,38 @@ class ChannelPlot:
             self.curves[1].setData(x=x[1], y=y[1], pen=self.pen_clean)
 
     def set_link_x(self, plot_item):
+        """
+        Link all the channel plots to have the same x-axis.
+        Parameters:
+        -----------
+        plot_item: pg.PlotItem
+            The plot item to link to. The x-axis of this plot item will be linked to the x-axis of the current plot item.
+        """
         self.plot_item.setXLink(plot_item)
 
     def change_visibility(self, raw=True, clean=True):
+        """
+        Change the visibility of the raw and clean data by changing the color.
+        Parameters:
+        -----------
+        raw: bool, optional
+            Whether to show the raw data. Default is True.
+        clean: bool, optional
+            Whether to show the clean data. Default is True.
+
+        """
         self.pen_clean = self.visible_pen_clean if clean else self.invisible_pen
         self.pen_raw = self.visible_pen_raw if raw else self.invisible_pen
         self._set_curve_params()
 
     def change_plot_type(self, fft=False):
+        """
+        Change the plot type to either time-domain or frequency-domain. Only for Offlineplot
+        Parameters:
+        -----------
+        fft: bool, optional
+            Whether to show the frequency-domain plot. Default is False.
+        """
         if fft and not self.fft_plot:
             self.fft_plot = True
             self.view.setLimits(xMin=self.freqs[0], xMax=self.freqs[-1])
@@ -167,11 +242,18 @@ class ChannelPlot:
 
 
 class Plotter(pg.GraphicsLayoutWidget):
+    """
+    Global parent plotter class containing multiple channel plots.
+    """
+
     pg.setConfigOption("background", "w")
     pg.setConfigOption("foreground", "k")
     pg.setConfigOption("leftButtonPan", False)
 
     def __init__(self, parent=None):
+        """
+        Initialize the Plotter object.
+        """
         super().__init__()
         self.parent = parent
         self.plot_list = []
@@ -187,6 +269,9 @@ class Plotter(pg.GraphicsLayoutWidget):
         self.timer = None
 
     def init_plots(self):
+        """
+        Init the channel plots
+        """
         for c, channel in enumerate(self.channels):
             data = [self.raw_data[self.idx_to_plot, c, :], self.clean_signal[self.idx_to_plot, c, :]]
             self.plot_list.append(ChannelPlot(self, channel, c))
@@ -206,6 +291,18 @@ class Plotter(pg.GraphicsLayoutWidget):
         return [c for c in self.channels if c in channels]
 
     def update_draw_params(self, plot_raw, plot_clean, plot_fft):
+        """
+        Called to update the parameters of the channel plots.
+
+        Parameters:
+        -----------
+        plot_raw: bool
+            Whether to show the raw data.
+        plot_clean: bool
+            Whether to show the clean data.
+        plot_fft: bool
+            Whether to show the frequency-domain plot. Only for OfflinePlotter.
+        """
         for plot in self.plot_list:
             plot.change_visibility(plot_raw, plot_clean)
             plot.change_plot_type(plot_fft)
@@ -231,10 +328,30 @@ class Plotter(pg.GraphicsLayoutWidget):
 
 
 class OfflinePlotter(Plotter):
+    """
+    Offline plotter class containing multiple channel plots. This class is used for offline mode, where the data is already loaded and stored in the object.
+    """
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
     def initialize_data(self, data, channels, time, cleaned_notch=None, cleaned_svd=None):
+        """
+        Initialize the data for the offline plotter.
+
+        Parameters:
+        -----------
+        data: np.ndarray
+            The raw data to plot.
+        channels: list
+            The list of channel names.
+        time: np.ndarray
+            The time corresponding to the raw data.
+        cleaned_notch: np.ndarray, optional
+            The cleaned data after notch filtering. If None, the raw data will be used as the clean data for the notch filter.
+        cleaned_svd: np.ndarray, optional
+            The cleaned data after SVD filtering. If None, the raw data will be used as the clean data for the SVD filter.
+        """
         self.channels = channels
         self.visible_channels = self.parent.display_options.channel_selecter.get_channel_names()
         self.raw_data = data
@@ -250,6 +367,21 @@ class OfflinePlotter(Plotter):
         self.built = True
 
     def update_data(self, data, channel_idxs, frame_idxs, data_type="both", auto_range=True):
+        """
+        Update the data. Might be called after processing the data.
+        Parameters:
+        -----------
+        data: np.ndarray
+            The new data to plot.
+        channel_idxs: list
+            The list of channel indices to update.
+        frame_idxs: list
+            The list of frame indices to update.
+        data_type: str, optional
+            The type of data to update. Can be "raw", "clean", or "both". Default is "both".
+        auto_range: bool, optional
+            Whether to automatically adjust the range of the plot. Default is True.
+        """
         if data_type == "both":
             self.raw_data[frame_idxs, channel_idxs, :] = data[0]
             self.clean_signal[frame_idxs, channel_idxs, :] = data[1]
@@ -260,6 +392,22 @@ class OfflinePlotter(Plotter):
         self.update_frame(self.idx_to_plot, force=True, data_type=data_type, auto_range=auto_range)
 
     def update_frame(self, idx, force=False, data_type="both", auto_range=True, update_time=False):
+        """
+        Update the plot according to the frame index.
+
+        Parameters:
+        -----------
+        idx: int
+            The index of the frame to plot.
+        force: bool, optional
+            Whether to force the update of the plot. Default is False.
+        data_type: str, optional
+            The type of data to update. Can be "raw", "clean", or "both". Default is "both".
+        auto_range: bool, optional
+            Whether to automatically adjust the range of the plot. Default is True.
+        update_time: bool, optional
+            Whether to update the time of the plot. Default is False.
+        """
         visible_idx = [self.channels.index(c) for c in self.visible_channels]
         has_changed = self.idx_to_plot != idx or force
         self.idx_to_plot = idx
@@ -284,7 +432,13 @@ class OfflinePlotter(Plotter):
                 )
 
     def update_channels(self, channels):
-        idx = [i[0] for i in channels]
+        """
+        Update the channels to plot. The subplots for those channels will be removed and not updated to increase efficiency.
+        Parameters:
+        -----------
+        channels: list
+            The list of channel names to plot.
+        """
         channels = [i[1] for i in channels]
         reordered_channels = self._reorder_channels(channels)
         if self.visible_channels == reordered_channels:
@@ -293,8 +447,16 @@ class OfflinePlotter(Plotter):
         self.update_frame(self.idx_to_plot)
 
     def update_filter(self, filter_type):
+        """
+        Update the plot according to the filter used for processing.
+        Parameters:
+        -----------
+        filter_type: str
+            The type of filter used for processing. Can be "notch" or "svd".
+        """
         self.current_filter = filter_type
         self.update_frame(self.idx_to_plot, True, data_type="clean", auto_range=False)
+        self.update_config_button(self.parent.remover_options.get_current_config())
 
     @property
     def clean_signal(self):
@@ -302,6 +464,10 @@ class OfflinePlotter(Plotter):
 
 
 class StreamPlotter(Plotter):
+    """
+    Live plotter class containing multiple channel plots.
+    """
+
     def __init__(self, parent=None, rate=60):
         super().__init__(parent)
         self.rate = rate
@@ -317,6 +483,26 @@ class StreamPlotter(Plotter):
     def initialize_data(
         self, data_buffer, time, channels, display_windows, queue_plot, is_running_event, channels_mapping
     ):
+        """
+        Initialize the data for the live plotter.
+
+        Parameters:
+        -----------
+        data_buffer: np.ndarray
+            The raw data to plot.
+        time: np.ndarray
+            The time corresponding to the raw data.
+        channels: list
+            The list of channel names.
+        display_windows: int
+            The size of the window to display. If set too high, some lag can be visible.
+        queue_plot: Queue
+            The queue to get the processed data from.
+        is_running_event: threading.Event
+            The event to check if the processing is running. If not, the plot will not be updated.
+        channels_mapping: dict
+            The mapping of channels used for each process.
+        """
         self.display_windows = display_windows
         self.queue_plot = queue_plot
         self.is_running_event = is_running_event
@@ -335,8 +521,15 @@ class StreamPlotter(Plotter):
         self.init_plots()
         self.built = True
 
-    def get_last_processed(self):
-        all_elements = []
+    def get_last_processed(self) -> np.ndarray | None:
+        """
+        Get the last processed data from the queue. If the queue is empty, return None.
+        Returns:
+        --------
+        data: np.ndarray | None
+            The last processed data from the queue. If the queue is empty, return None.
+
+        """
         while True:
             try:
                 data = self.queue_plot.get_nowait()
@@ -345,6 +538,18 @@ class StreamPlotter(Plotter):
                 return
 
     def update_plot(self, data_type="both", auto_range=False, force=False):
+        """
+        udpate the plot according to the data in the queue.
+
+        Parameters:
+        -----------
+        data_type: str, optional
+            The type of data to update. Can be "raw", "clean", or "both". Default is "both".
+        auto_range: bool, optional
+            Whether to automatically adjust the range of the plot. Default is True.
+        force: bool, optional
+            Whether to force the update of the plot. Default is False. This parameter is used to avoid non nesserary updates when data didn't changes.
+        """
         if self.is_running_event is None:
             return
 
@@ -380,7 +585,22 @@ class StreamPlotter(Plotter):
         self.setUpdatesEnabled(True)
         self.process_available = False
 
-    def get_data_from_queue(self, visible_channels, queues):
+    def get_data_from_queue(self, visible_channels, queues) -> dict:
+        """
+        Get data from the queue for the specified visible channels.
+
+        Parameters:
+        -----------
+        visible_channels: list
+            The list of channel names to update.
+        queues: list
+            The list of queues to get the processed data from.
+
+        Returns:
+        --------
+        data: dict
+            A dictionary containing the processed data for the specified visible channels. The keys are the channel indices, and the values are tuples containing the processed data and the corresponding time.
+        """
         for i in visible_channels:
             dic_tmp = queues[i].get_stacked()
             if dic_tmp is not None:
@@ -388,6 +608,19 @@ class StreamPlotter(Plotter):
         return {ch: self.get_clean(idx=ch) for ch in visible_channels}
 
     def adjust_to_wind(self, data, type="raw", t_raw=None):
+        """
+        Adjust the plot to the current window.
+        It is used to be sure that the processed and raw data are in the correct window as the process data might come after the raw data.
+        It is also used to have a continuous time axis.
+        Parameters:
+        -----------
+        data: tuple
+            A tuple containing the data and the corresponding time.
+        type: str, optional
+            The type of data to update. Can be "raw" or "clean". Default is "raw".
+        t_raw: np.ndarray, optional
+            The time corresponding to the raw data. If None, the time will be calculated from the data. Default is None.
+        """
         if type == "raw":
             data, t = data
             if t is not None and len(t) > 0 and np.isfinite(t[-1]):
@@ -426,6 +659,21 @@ class StreamPlotter(Plotter):
         return data
 
     def update_data(self, data_svd=None, data_notch=None, idx=None):
+        """
+        Update the data for the live plotter.
+
+        Parameters:
+        -----------
+        data_svd: np.ndarray, optional
+            The processed data after SVD filtering. If None, the raw data will be used as the clean data for the SVD filter.
+        data_notch: np.ndarray, optional
+            The processed data after notch filtering. If None, the raw data will be used as the clean data for the notch filter.
+        idx: int, optional
+
+        Returns:
+        --------
+        None
+        """
         if idx is not None:
             self.update_channels(data_notch, data_svd, idx)
             return
@@ -436,12 +684,35 @@ class StreamPlotter(Plotter):
         self.process_available = True
 
     def update_channels(self, data_notch=None, data_svd=None, idx=None):
+        """
+        Update the channels with the provided data.
+
+        Parameters:
+        -----------
+        data_notch: np.ndarray, optional
+            The processed data after notch filtering. If None, the raw data will be used as the clean data for the notch filter.
+        data_svd: np.ndarray, optional
+            The processed data after SVD filtering. If None, the raw data will be used as the clean data for the SVD filter.
+        idx: int, optional
+            The index of the channel to update. If None, all channels will be updated.
+
+        Returns:
+        --------
+        None
+        """
         if data_svd is not None:
             self.processed_svd_buffer.append(data_svd, fill_discontinuous=True)
         if data_notch is not None:
             self.processed_notch_buffer.append(data_notch, fill_discontinuous=True)
 
-    def update_filter(self, filter_type):
+    def update_filter(self, filter_type: str):
+        """
+        Update the plot according to the filter used for processing.
+        Parameters:
+        -----------
+        filter_type: str
+            The type of filter used for processing. Can be "notch" or "svd".
+        """
         self.current_filter = filter_type
 
     def get_raw(self):
@@ -461,6 +732,9 @@ class StreamPlotter(Plotter):
         clean_buffer.append(data, t, fill_discontinuous=True)
 
     def init_plots(self):
+        """
+        Initialize the plots for the live plotter. Put NaN value first to have a already present time axis.
+        """
         nan_vect = np.full(self.display_windows, np.nan)
         for c, channel in enumerate(self.channels):
             data = [nan_vect, nan_vect]
@@ -470,7 +744,18 @@ class StreamPlotter(Plotter):
                 self.plot_list[c].set_link_x(self.plot_list[0].plot_item)
             self.timer.start(1000 // self.rate)
 
-    def update_channels_visibility(self, channels):
+    def update_channels_visibility(self, channels: list) -> None:
+        """
+        Update the channels visibility by removing the channels that are not in the list of channels to display. This is used to increase the efficiency of the plot by not updating the channels that are not visible.
+        Parameters:
+        -----------
+        channels: list
+            The list of channel names to display.
+
+        Returns:
+        --------
+        None
+        """
         self.visible_channels = channels
         self.update_plot(force=True)
 
