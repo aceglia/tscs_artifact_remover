@@ -70,7 +70,7 @@ class ArtifactRemover:
         randomized: bool = False,
         post_filter: bool = False,
         threads: int = 1,
-        batch_idxs: Union[list, int] = None,
+        epochs_idxs: Union[list, int] = None,
         channel_idxs: Union[list, int] = None,
         data_window: list = None,
         nb_principal_components: int = None,
@@ -97,7 +97,7 @@ class ArtifactRemover:
             Apply filtering after processing.
         threads : int
             Number of parallel processes.
-        batch_idxs : int or list, optional
+        epochs_idxs : int or list, optional
             Batch indices to process.
         channel_idxs : int or list, optional
             Channel indices to process.
@@ -132,10 +132,10 @@ class ArtifactRemover:
         self.solution = Solution(self.data_loader.data_rate)
         print("Processing signals, this might take a while...")
         data = self.data_loader.init_data
-        if batch_idxs and not self.data_loader.stack_batch:
-            if not isinstance(batch_idxs, list):
-                batch_idxs = [batch_idxs]
-            data = data[batch_idxs, ...]
+        if epochs_idxs and not self.data_loader.stack_epochs:
+            if not isinstance(epochs_idxs, list):
+                epochs_idxs = [epochs_idxs]
+            data = data[epochs_idxs, ...]
 
         if channel_idxs:
             if not isinstance(channel_idxs, list):

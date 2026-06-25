@@ -11,7 +11,7 @@ from star_emg.rt_automatic_remover import RtArtifactRemover
 
 if __name__ == "__main__":
     # Data need to be either a path to a file or a numpy array
-    # If data is a numpy array, it should be of shape (n_batch, n_channels, n_samples)
+    # If data is a numpy array, it should be of shape (n_epochs, n_channels, n_samples)
     path_file = r"data\test001.txt"
 
     process_window = 600
@@ -42,4 +42,4 @@ if __name__ == "__main__":
         freq_bounds=[0, 200],
     )
     results = sol.analyse()
-    sol.plot(signals=True, fft=True, singular_values=False, stack_batch=False, show_analysis=True)
+    sol.plot(signals=True, fft=True, singular_values=False, stack_epochs=False, show_analysis=True)

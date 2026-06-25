@@ -53,7 +53,7 @@ class DataStreamer:
         self.data_loader = DataLoader(data, ignore_filtering=True, **data_loader_kwargs)
         if self.data_loader.init_data is None:
             return
-        self.data_loader._apply_stack_batch()
+        self.data_loader._apply_stack_epochs()
         self.is_data_loaded = True
 
     @property

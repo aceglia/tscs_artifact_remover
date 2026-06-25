@@ -7,9 +7,14 @@ from star_emg.automatic_remover import ArtifactRemover
 
 if __name__ == "__main__":
     # Data need to be either a path to a file or a numpy array
-    # If data is a numpy array, it should be of shape (n_batch, n_channels, n_samples)
+    # If data is a numpy array, it should be of shape (n_epochs, n_channels, n_samples)
     path_file = r"data\test001.txt"
     artifact_remover = ArtifactRemover(data=path_file, signal_filter=True, center=True, cutoff=[10, 500])
+    from star_emg.io_utils import write_txt_file
+
+    init_data = artifact_remover.data_loader.init_data
+    write_txt_file(init_data[2:], r"data\emg_with_artifact.txt", headers=["EMG1", "EMG2"])
+    write_txt_file(init_data[0:1], r"data\emg_clean.txt", headers=["EMG1", "EMG2"])
 
     sol = artifact_remover.process(
         hankel_size=450,
@@ -28,4 +33,4 @@ if __name__ == "__main__":
         factor=0.35,
     )
     results = sol.analyse()
-    sol.plot(signals=True, fft=True, singular_values=False, stack_batch=False, show_analysis=True)
+    sol.plot(signals=True, fft=True, singular_values=False, stack_epochs=False, show_analysis=True)

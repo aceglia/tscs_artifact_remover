@@ -28,4 +28,4 @@ if __name__ == "__main__":
     sol = Solution(data_rate=artifact_remover.streamer.data_rate)
     sol.from_dict(sol_dict)
     sol.analyse()
-    sol.plot(signals=True, fft=True, singular_values=False, stack_batch=False, show_analysis=True)
+    sol.plot(signals=True, fft=True, singular_values=False, stack_epochs=False, show_analysis=True)

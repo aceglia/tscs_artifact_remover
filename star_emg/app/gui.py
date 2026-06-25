@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from PyQt5.QtWidgets import (
     QMainWindow,
     QPushButton,
@@ -197,7 +198,10 @@ class GUI(QMainWindow):
         if self.processing_widget.canceled:
             return
         # self.toolbar.save_files_button.setEnabled(True)
-        self.default_save_name = self.processing_widget.file_path.replace(".mat", "")
+        path_tmp = Path(self.processing_widget.file_path)
+        self.default_base_name = os.path.join(str(path_tmp.parent), path_tmp.stem)
+        self.default_save_name = os.path.join(str(path_tmp.parent), path_tmp.stem + '_processed' + path_tmp.suffix)
+        self.default_extension = path_tmp.suffix
         self.toolbar.save_config_button.setEnabled(True)
         self.toolbar.save_as_config_button.setEnabled(True)
 
@@ -205,9 +209,8 @@ class GUI(QMainWindow):
         """
         Run the processing widget's save_file method to save the processed file. The file is saved with a name based on the default save name, with "_processed.mat" appended to it. It also logs the save action in the log box.
         """
-        file_path = self.default_save_name + "_processed.mat"
-        self.log_box.log(f"Saving file at: {file_path}")
-        self.processing_widget.save_file(file_path)
+        self.log_box.log(f"Saving file at: {self.default_save_name}")
+        self.processing_widget.save_file(self.default_save_name, self.default_extension)
 
     def _load_config(self):
         """
@@ -229,7 +232,9 @@ class GUI(QMainWindow):
             return
         if self.processing_widget.canceled:
             return
-        self.default_save_name = self.processing_widget.file_path.replace(".mat", "")
+        path_tmp = Path(self.processing_widget.file_path)
+        self.default_base_name = os.path.join(str(path_tmp.parent), path_tmp.stem)
+        self.default_save_name = os.path.join(str(path_tmp.parent), path_tmp.stem + '_processed' + path_tmp.suffix)
         self.toolbar.save_config_button.setEnabled(True)
         self.toolbar.save_as_config_button.setEnabled(True)
 
@@ -237,7 +242,7 @@ class GUI(QMainWindow):
         """
         Run the processing widget's save_config method to save the current configuration. The configuration is saved with a name based on the default save name, with "_configuration.json" appended to it. It also logs the save action in the log box.
         """
-        file_path = self.default_save_name + "_configuration.json"
+        file_path = self.default_base_name + "_configuration.json"
         self.log_box.log(f"Saving configuration file at: {file_path}")
         self.processing_widget.save_config(file_path)
 

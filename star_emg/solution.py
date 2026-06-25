@@ -188,7 +188,7 @@ class Solution:
         with open(path, "wb") as f:
             pickle.dump(dict_to_save, f)
 
-    def plot(self, signals=True, fft=False, singular_values=False, stack_batch=False, show_analysis=False):
+    def plot(self, signals=True, fft=False, singular_values=False, stack_epochs=False, show_analysis=False):
         """
         Plot the decomposition output.
         Parameters:
@@ -199,8 +199,8 @@ class Solution:
             Whether to plot the FFT.
         singular_values: bool, optional
             Whether to plot the singular values.
-        stack_batch: bool, optional
-            Whether to stack the batch of signals.
+        stack_epochs: bool, optional
+            Whether to stack the epochs of signals.
         show_analysis: bool, optional
             Whether to show the analysis results.
 
@@ -216,7 +216,7 @@ class Solution:
             raise RuntimeError("No analysis to show. Please run analyse() method before plotting analysis results.")
         plotter = PlotSolution(signals=signals, fft=fft, singular_values=singular_values, data_rate=self.data_rate)
         results = self.quality if show_analysis else None
-        plotter.plot(self._get_all_decomposition_output(), stack_batch=stack_batch, analysis=results)
+        plotter.plot(self._get_all_decomposition_output(), stack_epochs=stack_epochs, analysis=results)
 
     def _convert_quality_to_dict(self, quality):
         dict_to_return = {

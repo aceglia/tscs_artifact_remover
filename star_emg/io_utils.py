@@ -1,4 +1,5 @@
 import csv
+from enum import Enum
 from itertools import zip_longest
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -10,6 +11,10 @@ from star_emg.processing_utils import filter_data
 
 ArrayLike = np.ndarray
 
+class FileType(Enum):
+    TXT = "txt"
+    BIO = "bio"
+    MAT = "mat"
 
 def write_txt_file(
     data: np.ndarray,
@@ -23,7 +28,7 @@ def write_txt_file(
     Parameters
     ----------
     data : np.ndarray
-        Shape (n_batch, n_channel, n_sample) or (n_channel, n_sample).
+        Shape (n_epochs, n_channel, n_sample) or (n_channel, n_sample).
     path : str
         Output file path.
     delimiter : str
@@ -43,14 +48,14 @@ def write_txt_file(
     open(path, "w").close()
 
     if data.ndim == 3:
-        for i, batch in enumerate(data):
+        for i, epochs in enumerate(data):
             with open(path, "a", newline="") as file:
                 writer = csv.writer(file, delimiter=delimiter)
 
                 writer.writerow(headers)
 
                 # Shape: (n_channels, n_samples) -> rows = samples
-                writer.writerows(batch.T)
+                writer.writerows(epochs.T)
 
                 if i < data.shape[0] - 1:
                     file.write("\n")
@@ -104,13 +109,15 @@ def load_txt_file(path: str, delimiter: str = "\t") -> Tuple[ArrayLike, List[str
     array = np.array(frames).astype(float)
     array = np.swapaxes(array, 1, 2)
     is_time_vector = check_for_time(array)
+    time_vector = None
     if is_time_vector:
         data_rate = 1 / np.mean(np.diff(array[:, 0, :], axis=-1))
         array = array[:, 1:, :]
         channel_names = channel_names[1:]
+        time_vector = array[:, 0, :]
     frame_idx = np.arange(0, len(frames))
 
-    return array, channel_names, frame_idx, data_rate
+    return array, channel_names, frame_idx, data_rate, time_vector
 
 
 def check_for_time(data: np.ndarray) -> bool:
@@ -355,13 +362,13 @@ class DataLoader:
         **kwargs: Any,
     ) -> None:
         """
-        Initializes the DataLoader instance by determining the type of input data (file path or numpy array) and loading the data accordingly. The method also retrieves data parameters and filtering parameters from the provided keyword arguments, applies filtering to the data if specified, and manages the shape of the data for further processing. If the stack_batch option is enabled and the initial data has more than one frame, it applies stacking to the batch dimension of the data.
+        Initializes the DataLoader instance by determining the type of input data (file path or numpy array) and loading the data accordingly. The method also retrieves data parameters and filtering parameters from the provided keyword arguments, applies filtering to the data if specified, and manages the shape of the data for further processing. If the stack_epochs option is enabled and the initial data has more than one frame, it applies stacking to the epochs dimension of the data.
         Parameters:
         -----------
         data: str or np.ndarray
             The input data to be loaded, which can be either a file path (string) pointing to a supported file format or a numpy array containing the signal data.
-        stack_batch: bool, optional
-            A flag indicating whether to stack the batch dimension of the data if it has more than one frame. If set to True, the method will apply stacking to the batch dimension of the data, which can be useful for certain processing techniques that require a specific data shape.
+        stack_epochs: bool, optional
+            A flag indicating whether to stack the epochs dimension of the data if it has more than one frame. If set to True, the method will apply stacking to the epochs dimension of the data, which can be useful for certain processing techniques that require a specific data shape.
         ignore_filtering: bool, optional
             A flag indicating whether to ignore the filtering step when loading the data. If set to True no filtering will be applied to the data, and the raw data will be loaded directly without any preprocessing. If set to False, the method will apply the specified filtering parameters to the data during the loading process.
         **kwargs: dict
@@ -383,12 +390,13 @@ class DataLoader:
         self.data = data if isinstance(data, np.ndarray) else None
         self.a, self.b = None, None
         self.gap_free = True
-        self.stack_batch_applied = False
+        self.stack_epochs_applied = False
         self._unstack_shape = None
         self.init_data = None
         self.frames = []
         self.channel_names = []
         self.data_rate = None
+        self.time_vector = None
 
         self.get_data_params(**kwargs)
         self.get_filtering_params(**kwargs)
@@ -396,12 +404,12 @@ class DataLoader:
         if self.path is not None or self.data is not None:
             self.load_data(ignore_filtering=ignore_filtering)
 
-    def _apply_stack_batch(self) -> None:
+    def _apply_stack_epochs(self) -> None:
         """
-        Applies stacking to the batch dimension of the data. This method is called when the stack_batch option is enabled and the initial data has more than one frame. It manages the shape of the data by swapping axes and reshaping it to create a new batch dimension, allowing for further processing techniques that require a specific data shape.
+        Applies stacking to the epochs dimension of the data. This method is called when the stack_epochs option is enabled and the initial data has more than one frame. It manages the shape of the data by swapping axes and reshaping it to create a new epochs dimension, allowing for further processing techniques that require a specific data shape.
         """
         self._unstack_shape = self.init_data.shape
-        self.stack_batch_applied = True
+        self.stack_epochs_applied = True
         if len(self.init_data.shape) != 3:
             return
         self.init_data = np.swapaxes(self.init_data, 0, 1)
@@ -409,9 +417,9 @@ class DataLoader:
 
     def get_unstacked_data(self) -> None:
         """
-        Gets the unstacked data if the stack_batch option was applied. This method is used to retrieve the original data shape after stacking has been applied to the batch dimension. If the stack_batch option was enabled and the initial data was reshaped, this method will reverse the stacking process by swapping axes and reshaping the data back to its original shape, allowing for further analysis or processing in its original format.
+        Gets the unstacked data if the stack_epochs option was applied. This method is used to retrieve the original data shape after stacking has been applied to the epochs dimension. If the stack_epochs option was enabled and the initial data was reshaped, this method will reverse the stacking process by swapping axes and reshaping the data back to its original shape, allowing for further analysis or processing in its original format.
         """
-        if self.stack_batch_applied:
+        if self.stack_epochs_applied:
             data = self.init_data.reshape(self._unstack_shape[1], self._unstack_shape[0], self._unstack_shape[2])
             data = np.swapaxes(data, 0, 1)
             return data
@@ -444,8 +452,10 @@ class DataLoader:
         """
         Loads file and set attrbutes data, channel_names, frames, and data_rate. This method is responsible for loading the data from the specified file path based on the file format (such as .txt, .bio, .mat, or .csv). It uses the appropriate loading function for each file format to extract the signal data, channel names, frame indices, and data rate from the file. If the data rate is not provided in the file and is specified in the loading parameters, it will use the provided data rate. If neither is available, it raises a ValueError indicating that the data rate must be provided if not loaded from the file.
         """
+        self.time_vector = None
+
         if self.path.endswith(".txt"):
-            self.data, self.channel_names, self.frames, self.data_rate = load_txt_file(self.path, self.delimiter)
+            self.data, self.channel_names, self.frames, self.data_rate, self.time_vector = load_txt_file(self.path, self.delimiter)
         elif self.path.endswith(".bio"):
             self.data, self.channel_names, self.frames, self.data_rate = load_bio_file(self.path, self.channel_names)
         elif self.path.endswith(".mat"):
@@ -458,6 +468,13 @@ class DataLoader:
             self.data_rate = self.loading_params["data_rate"]
         elif self.data_rate is None:
             raise ValueError("Data rate must be provided if not loaded from file")
+        
+        if self.time_vector is None:
+            self.time_vector = np.repeat(
+                (np.arange(0, self.data.shape[-1]) / self.data_rate)[None],
+                self.data.shape[0],
+                axis=0,
+            )
 
     def load_data(self, ignore_filtering: bool = False) -> None:
         """
@@ -556,17 +573,17 @@ class DataLoader:
 
     def flatten_data(self, data: ArrayLike) -> ArrayLike:
         """ "
-        Flattens the data by reshaping it to have a shape of (num_channels x num_batch, num_samples) while preserving the original data shape for later use.
+        Flattens the data by reshaping it to have a shape of (num_channels x num_epochs, num_samples) while preserving the original data shape for later use.
 
         Parameters:
         -----------
         data: np.ndarray
-            The input data to be flattened, which is expected to have a shape of (num_frames, num_channels, num_samples). The method will reshape this data to have a shape of (num_channels x num_batch, num_samples) while keeping track of the original data shape for later use when unflattening the data back to its original format.
+            The input data to be flattened, which is expected to have a shape of (num_frames, num_channels, num_samples). The method will reshape this data to have a shape of (num_channels x num_epochs, num_samples) while keeping track of the original data shape for later use when unflattening the data back to its original format.
 
         Returns:
         --------
         np.ndarray
-            The flattened data as a numpy array with a shape of (num_channels x num_batch, num_samples), where num_batch is the number of frames in the original data. The original data shape is stored in an attribute for later use when unflattening the data back to its original format.
+            The flattened data as a numpy array with a shape of (num_channels x num_epochs, num_samples), where num_epochs is the number of frames in the original data. The original data shape is stored in an attribute for later use when unflattening the data back to its original format.
         """
         self._data_shape = data.shape
         return data.reshape(-1, data.shape[-1])
@@ -578,7 +595,7 @@ class DataLoader:
          Parameters:
         -----------
         data: np.ndarray
-            The input data to be unflattened, which is expected to have a shape of (num_channels x num_batch, num_samples). The method will reshape this data back to its original shape based on the stored data shape from when the data was flattened or a provided data shape if specified.
+            The input data to be unflattened, which is expected to have a shape of (num_channels x num_epochs, num_samples). The method will reshape this data back to its original shape based on the stored data shape from when the data was flattened or a provided data shape if specified.
         data_shape: tuple, optional
             An optional tuple specifying the original data shape to be used for unflattening the data. If provided, this data shape will be used to reshape the data back to its original format. If not provided, the method will use the stored data shape from when the data was flattened to reshape the data back to its original format.
 

@@ -11,13 +11,14 @@ from scipy.fft import rfftfreq
 import scipy.io as sio
 
 from biosiglive.streaming.utils import CircularBuffer
+from biosiglive import save
 from .stream_utils import CustomQueue
 from .remover_widget import StreamRemover, OfflineRemover
 from ..rt_automatic_remover import RtArtifactRemover
 from .display_options import StreamDisplayWidget, OfflineDisplayWidget
 from .plot_widget import OfflinePlotter, StreamPlotter
 from .gui_utils import ensure_list, Worker
-from ..io_utils import export_csv
+from ..io_utils import export_csv, write_txt_file
 from ..processing_utils import Quality
 from ..solution import Solution
 from .stream_widget import StreamWidget
@@ -130,7 +131,7 @@ class OfflineProcessingWidget(ProcessingWidget):
 
     def update_frame(self, frame_number):
         """
-        Update the batch number and update the plot.
+        Update the epochs number and update the plot.
         """
         self.plot.update_frame(frame_number, update_time=True)
         self.plot.update_config_button(self.remover_options.get_current_config())
@@ -148,7 +149,7 @@ class OfflineProcessingWidget(ProcessingWidget):
         --------
         None
         """
-        kwargs["batch_idxs"] = ensure_list(self.display_options.frame_number)
+        kwargs["epochs_idxs"] = ensure_list(self.display_options.frame_number)
         # self.remover_options.disable()
         self.parent.log_box.log("Processing data...")
         if kwargs["notch_filter"]:
@@ -190,15 +191,15 @@ class OfflineProcessingWidget(ProcessingWidget):
         fct(list_results, initial_data_shape=init_shape)
 
         self.remover_options.remover.solution = solution
-        self.update_processed_plot(kwargs["batch_idxs"], kwargs["channel_idxs"])
+        self.update_processed_plot(kwargs["epochs_idxs"], kwargs["channel_idxs"])
         self.parent.log_box.log("Data processing done!")
         qual_fct = self.quality_notch.compute_quality if kwargs["notch_filter"] else self.quality_svd.compute_quality
         qual_fct(
-            self.remover_options.get_data(kwargs["batch_idxs"], kwargs["channel_idxs"]).astype(float),
+            self.remover_options.get_data(kwargs["epochs_idxs"], kwargs["channel_idxs"]).astype(float),
             self.remover_options.get_cleaned_data().astype(float),
             ground_truth=None,
             fs=self.remover_options.get_rate(),
-            idx=kwargs["batch_idxs"],
+            idx=kwargs["epochs_idxs"],
             channel=kwargs["channel_idxs"],
         )
         self.remover_options.enable(all=True)
@@ -206,7 +207,7 @@ class OfflineProcessingWidget(ProcessingWidget):
         self.parent.set_saved_ok(False)
 
     @staticmethod
-    def _thread_safe_process(fct, data, data_rate, batch_idxs, channel_idxs, process_window, **kwargs):
+    def _thread_safe_process(fct, data, data_rate, epochs_idxs, channel_idxs, process_window, **kwargs):
         """
         A thread-safe version of the processing function. It uses a queue to pass data between threads.
         Parameters:
@@ -217,8 +218,8 @@ class OfflineProcessingWidget(ProcessingWidget):
             The data to process.
         data_rate: float
             The data rate.
-        batch_idxs: list
-            The batch indices to process.
+        epochs_idxs: list
+            The epochs indices to process.
         channel_idxs: list
             The channel indices to process.
         process_window: int
@@ -230,10 +231,10 @@ class OfflineProcessingWidget(ProcessingWidget):
         tuple
             The results of the processing.
         """
-        if batch_idxs:
-            if not isinstance(batch_idxs, list):
-                batch_idxs = [batch_idxs]
-            data = data[batch_idxs, ...]
+        if epochs_idxs:
+            if not isinstance(epochs_idxs, list):
+                epochs_idxs = [epochs_idxs]
+            data = data[epochs_idxs, ...]
 
         if channel_idxs:
             if not isinstance(channel_idxs, list):
@@ -309,13 +310,13 @@ class OfflineProcessingWidget(ProcessingWidget):
         self.update_frame(0)
         self.update_filter("svd")
 
-    def update_processed_plot(self, batch_idxs, channel_idxs):
+    def update_processed_plot(self, epochs_idxs, channel_idxs):
         """
         Update the plot with the processed data.
         Parameters:
         -----------
-        batch_idxs: list
-            The batch indices to process.
+        epochs_idxs: list
+            The epochs indices to process.
         channel_idxs: list
             The channel indices to process.
         Returns:
@@ -324,11 +325,11 @@ class OfflineProcessingWidget(ProcessingWidget):
         """
         cleaned_data = self.remover_options.get_cleaned_data()
         self.plot.update_data(
-            cleaned_data, ensure_list(channel_idxs), ensure_list(batch_idxs), data_type="clean", auto_range=False
+            cleaned_data, ensure_list(channel_idxs), ensure_list(epochs_idxs), data_type="clean", auto_range=False
         )
         self.plot.enable_config_button(channel_idxs)
 
-    def save_file(self, path):
+    def save_file(self, path, ext='.bio'):
         """
         Save the processed and raw data to a file.
         Parameters:
@@ -347,11 +348,21 @@ class OfflineProcessingWidget(ProcessingWidget):
             "channels": self.remover_options.get_channels(),
             "rate": self.remover_options.get_rate(),
         }
-        sio.savemat(path, dic_to_save)
-        export_csv(path, **dic_to_save)
-        self.parent.log_box.log(
-            "To use the processed file in signal you can import the txt file saved at " + path.replace(".mat", ".txt")
-        )
+        if ext == '.mat':
+            sio.savemat(path, dic_to_save)
+        elif ext == '.bio':
+            save(dic_to_save, path)
+        elif ext == '.txt':
+            channels = self.remover_options.get_channels()
+            suffix = ['', '_clean_svd', '_clean_notch']
+            channels_str = sum([[chan + s for chan in channels ] for s in suffix], [])
+            channels_str = ['time'] + channels_str
+            time_vector = self.remover_options.remover.data_loader.time_vector
+            write_txt_file(np.hstack((time_vector, self.plot.raw_data, self.plot.clean_svd, self.plot.clean_notch)), path=path, headers=channels_str)
+        # export_csv(path, **dic_to_save)
+        # self.parent.log_box.log(
+        #     "To use the processed file in signal you can import the txt file saved at " + path.replace(".mat", ".txt")
+        # )
         self.parent.set_saved_ok(True)
 
     def load_config(self, path):

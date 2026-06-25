@@ -85,9 +85,9 @@ class Optimizer:
         #     params_list.append(es.best.x)
         return idx, params_list
 
-    def optimize(self, process_window: int = 5000, channels: Union[list, int] = None, batch: Union[list, int] = None):
+    def optimize(self, process_window: int = 5000, channels: Union[list, int] = None, epochs: Union[list, int] = None):
         """
-        Optimizes the artifact remover for the given channels and batch.
+        Optimizes the artifact remover for the given channels and epochs.
 
         Parameters:
         -----------
@@ -95,10 +95,10 @@ class Optimizer:
             The window size for processing.
         channels: Union[list, int]
             The channels to optimize. If None, all channels are optimized.
-        batch: Union[list, int]
-            The batch to optimize. If None, all batches are optimized.
+        epochs: Union[list, int]
+            The epochs to optimize. If None, all epochs are optimized.
         """
-        data, data_rate = self._get_data_to_optimize(channels, batch)
+        data, data_rate = self._get_data_to_optimize(channels, epochs)
         freqs = rfftfreq(data.shape[-1], d=1 / data_rate)
         self.quality.init_shape((1, 1, data.shape[-1]))
         self.process_window = process_window
@@ -134,15 +134,15 @@ class Optimizer:
             list_results.append(self._optimize_single(i, data[i], fct, quality_fct, self.process_window))
         return list_results
 
-    def _get_data_to_optimize(self, channels: Union[list, int] = None, batch: Union[list, int] = None) -> tuple:
+    def _get_data_to_optimize(self, channels: Union[list, int] = None, epochs: Union[list, int] = None) -> tuple:
         """
-        Gets the data to optimize for the given channels and batch.
+        Gets the data to optimize for the given channels and epochs.
         Parameters:
         -----------
         channels: Union[list, int]
             The channels to optimize. If None, all channels are optimized.
-        batch: Union[list, int]
-            The batch to optimize. If None, all batches are optimized.
+        epochs: Union[list, int]
+            The epochs to optimize. If None, all epochs are optimized.
 
         Returns:
         --------
@@ -150,11 +150,11 @@ class Optimizer:
             The data to optimize, the data rate and the process window.
         """
         data = self.star_emg.data_loader.init_data
-        j = ensure_list(batch) if batch is not None else slice(None)
+        j = ensure_list(epochs) if epochs is not None else slice(None)
         k = ensure_list(channels) if channels is not None else slice(None)
         self.init_data_shape = data.shape
         self.star_emg.data_loader.init_data = data[j][:, k, ...]
-        self.star_emg.data_loader._apply_stack_batch()
+        self.star_emg.data_loader._apply_stack_epochs()
         # data = self.star_emg.data_loader.flatten_data(data[j, k, ...])
         data_rate = self.star_emg.data_loader.data_rate
         return self.star_emg.data_loader.init_data, data_rate

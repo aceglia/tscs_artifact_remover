@@ -209,9 +209,9 @@ def filter_data(
     else:
         raise ValueError("Invalid filter type")
 
-    batch_added = False
+    epochs_added = False
     if len(data.shape) != 3:
-        batch_added = True
+        epochs_added = True
         data = data[None]
     filtered_data = np.zeros_like(data)
     for i in range(data.shape[0]):
@@ -219,7 +219,7 @@ def filter_data(
             filtered_data[i, k, :], a, b = filter_function(
                 data[i, k, :], cutoff, fs, order=order, offline=offline, a=a, b=b
             )
-    if batch_added:
+    if epochs_added:
         filtered_data = filtered_data[0]
     return filtered_data, a, b
 

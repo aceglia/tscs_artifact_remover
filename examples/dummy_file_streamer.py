@@ -43,5 +43,5 @@ async def main(data, chunk_size=20, data_rate=2000):
 if __name__ == "__main__":
     path_file = r"data\test001.txt"
     loader = DataLoader(path_file, center=True)
-    loader._apply_stack_batch()
+    loader._apply_stack_epochs()
     asyncio.run(main(loader.init_data, chunk_size=20, data_rate=loader.data_rate))

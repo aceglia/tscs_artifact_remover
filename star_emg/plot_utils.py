@@ -48,12 +48,12 @@ class PlotSolution:
             for i, to_plot in enumerate([self.plot_signals, self.plot_fft, self.plot_singular_values])
             if to_plot
         ]
-        self.batch_idx = 0
+        self.epochs_idx = 0
         self.channel_idx = 0
-        self.total_batch = 0
+        self.total_epochs = 0
         self.channel_names = channel_names
         self.total_channel = len(channel_names)
-        self.batch_idx = 0
+        self.epochs_idx = 0
         self.channel_idx = 0
         self.canvas, self.toolbar, self.fig, self.axes = self.init_figure_canvas(self.nb_suplot)
 
@@ -79,11 +79,11 @@ class PlotSolution:
         self._plot_graphs()
 
     def _previous_button_clicked(self):
-        self.batch_idx = np.min([self.batch_idx - 1, 0])
+        self.epochs_idx = np.min([self.epochs_idx - 1, 0])
         self._plot_graphs()
 
     def _next_button_clicked(self):
-        self.batch_idx = np.min([self.batch_idx + 1, self.total_batch - 1])
+        self.epochs_idx = np.min([self.epochs_idx + 1, self.total_epochs - 1])
         self._plot_graphs()
 
     def init_figure_canvas(self, nb_subplot):
@@ -109,11 +109,11 @@ class PlotSolution:
         return canvas, toolbar, fig, axes
 
     def _plot_curves(self, ax):
-        ax.plot(self.data["init_data"][self.batch_idx, self.channel_idx, :], label="Initial Signal", alpha=0.2)
-        ax.plot(self.data["output"][self.batch_idx, self.channel_idx, :], label="Processed Signal")
+        ax.plot(self.data["init_data"][self.epochs_idx, self.channel_idx, :], label="Initial Signal", alpha=0.2)
+        ax.plot(self.data["output"][self.epochs_idx, self.channel_idx, :], label="Processed Signal")
         if "groundtruth_signals" in self.data:
             ax.plot(
-                self.data["groundtruth_signals"][self.batch_idx, self.channel_idx, :],
+                self.data["groundtruth_signals"][self.epochs_idx, self.channel_idx, :],
                 label="Groundtruth Signal",
                 linestyle="--",
             )
@@ -123,20 +123,20 @@ class PlotSolution:
                 text += (
                     name
                     + ": "
-                    + f" Kurtosis = {float(self.analysis['kurtosis'][n][self.batch_idx, self.channel_idx]):.4f}"
-                    + f", Line Length = {float(self.analysis['Line Length'][n][self.batch_idx, self.channel_idx]):.4f}"
+                    + f" Kurtosis = {float(self.analysis['kurtosis'][n][self.epochs_idx, self.channel_idx]):.4f}"
+                    + f", Line Length = {float(self.analysis['Line Length'][n][self.epochs_idx, self.channel_idx]):.4f}"
                     + "\n"
                 )
             # ax.set_title(text)
             ax.text(x=0, y=ax.get_ylim()[1], s=text, ha="left", va="top", fontsize=10)
 
     def _plot_fft(self, ax):
-        init_fft = self.data["init_data"][self.batch_idx, self.channel_idx, :]
-        processed_fft = self.data["output"][self.batch_idx, self.channel_idx, :]
+        init_fft = self.data["init_data"][self.epochs_idx, self.channel_idx, :]
+        processed_fft = self.data["output"][self.epochs_idx, self.channel_idx, :]
         gt = (
             None
             if "groundtruth_signals" not in self.data
-            else self.data["groundtruth_signals"][self.batch_idx, self.channel_idx, :]
+            else self.data["groundtruth_signals"][self.epochs_idx, self.channel_idx, :]
         )
         # get tab10 colors from matplotlib
         colors = plt.cm.tab10(np.linspace(0, 1, 10))
@@ -151,14 +151,14 @@ class PlotSolution:
         if self.analysis is not None:
             for n, name in enumerate(["raw", "process"]):
                 plt.vlines(
-                    self.analysis["Median frequency"][n][self.batch_idx, self.channel_idx],
+                    self.analysis["Median frequency"][n][self.epochs_idx, self.channel_idx],
                     0,
                     ax.get_ylim()[1],
                     color=colors[n],
                     linestyles="--",
                 )
                 plt.hlines(
-                    self.analysis["FFT Amplitude"][n][self.batch_idx, self.channel_idx],
+                    self.analysis["FFT Amplitude"][n][self.epochs_idx, self.channel_idx],
                     0,
                     ax.get_xlim()[1],
                     color=colors[n],
@@ -166,8 +166,8 @@ class PlotSolution:
                 )
 
                 # text = (name + ': ' +
-                #     + f" Kurtosis = {float(self.analysis['kurtosis'][n][self.batch_idx, self.channel_idx]):.4f}"
-                #     + f", Line Length = {float(self.analysis['line_length'][n][self.batch_idx, self.channel_idx]):.4f}"
+                #     + f" Kurtosis = {float(self.analysis['kurtosis'][n][self.epochs_idx, self.channel_idx]):.4f}"
+                #     + f", Line Length = {float(self.analysis['line_length'][n][self.epochs_idx, self.channel_idx]):.4f}"
                 # )
             # ax.set_title(text)
             # ax.text(x=0, y=ax.get_ylim()[1], s=text, ha="left", va="top", fontsize=10)
@@ -176,8 +176,8 @@ class PlotSolution:
         ax.legend(["Initial Signal", "Processed Signal"])  # , "Groundtruth Signal"])
 
     def _plot_singular_values(self, ax):
-        ax.plot(self.data["s"][self.batch_idx, self.channel_idx, :], label="Initial Signal")
-        ax.plot(self.data["s_reduced"][self.batch_idx, self.channel_idx, :], label="Processed Signal")
+        ax.plot(self.data["s"][self.epochs_idx, self.channel_idx, :], label="Initial Signal")
+        ax.plot(self.data["s_reduced"][self.epochs_idx, self.channel_idx, :], label="Processed Signal")
 
     def _plot_graphs(self):
         count_axis = 0
@@ -190,7 +190,7 @@ class PlotSolution:
             fct(ax)
         self.canvas.draw()
 
-    def plot(self, data: dict, stack_batch=False, analysis=None):
+    def plot(self, data: dict, stack_epochs=False, analysis=None):
         """
         Plot the data using a tkinter interface.
         Parameters:
@@ -207,8 +207,8 @@ class PlotSolution:
                 The singular values to plot.
             - s_reduced: np.ndarray
                 The reduced singular values to plot.
-        stack_batch: bool
-            Whether to stack the batch dimension of the data.
+        stack_epochs: bool
+            Whether to stack the epochs dimension of the data.
         analysis: dict, optional
             The analysis results to plot (from the Analysis class), which should contain the following keys:
             - kurtosis: np.ndarray
@@ -237,16 +237,16 @@ class PlotSolution:
             data["groundtruth_signals"] = data["groundtruth_signals"][None]
 
         self.total_channel = data["init_data"].shape[1]
-        self.total_batch = data["init_data"].shape[0]
+        self.total_epochs = data["init_data"].shape[0]
         self.data = {}
         for key, items in data.items():
             if items is None:
                 continue
             if key == "u" or key == "v":
                 continue
-            if stack_batch:
+            if stack_epochs:
                 items = np.concatenate(items, axis=0)
-                self.total_batch = 1
+                self.total_epochs = 1
             self.data[key] = items
         self._create_combo_boxes()
         self._plot_graphs()
