@@ -1,11 +1,10 @@
-from functools import partial
+import numpy as np
+import time
 
 from star_emg.streaming_utils import DataStreamer
 from biosiglive.streaming.utils import CircularBuffer
 from star_emg.automatic_remover import ArtifactRemover
 from star_emg.solution import Solution
-from star_emg.processing_utils import Quality
-import numpy as np
 
 
 class RtArtifactRemover(ArtifactRemover):
@@ -14,8 +13,7 @@ class RtArtifactRemover(ArtifactRemover):
     It is based on the ArtifactRemover class and it is designed to work in real-time.
     Convenient offline mode can be used to stream from a file.
     """
-
-    def __init__(self, window_size, data=None, update_svd_every=1, **data_loader_kwargs):
+    def __init__(self, window_size=None, data=None, update_svd_every=1, **data_loader_kwargs):
         """
         Initialize the artifact remover.
         If data is provided, it will be used to initialize the data loader and the streamer. Otherwise, it will initialize the window size.
@@ -47,7 +45,8 @@ class RtArtifactRemover(ArtifactRemover):
         self.output = None
         self.update_svd_every = update_svd_every
 
-        self.buffer = CircularBuffer(1, window_size)
+        if window_size is not None:
+            self.buffer = CircularBuffer(1, window_size)
         self.solution = None
         self.last_rejected = None
         self.streamer = DataStreamer(data=data, offline=self.offline, **data_loader_kwargs)
@@ -89,9 +88,20 @@ class RtArtifactRemover(ArtifactRemover):
             raise ValueError(
                 "Only one channel can be processed at the same time. Please provide a 2D array of shape (1, n_channels)."
             )
+        if self.buffer is None and ["window_size"] not in process_kwargs:
+            raise ValueError(
+                "The buffer is not initialized. Please provide a window_size parameter to initialize the buffer."
+            )
+        elif self.buffer is None or process_kwargs["window_size"] != self.buffer.size:
+            if self.buffer is not None:
+                tmp_data, tmp_time = self.buffer.get()
+            else:
+                tmp_data = None
+            self.buffer = CircularBuffer(1, process_kwargs["window_size"])
+            if tmp_data is not None:
+                self.buffer.append(x=tmp_data[-process_kwargs["window_size"]:], t=tmp_time[-process_kwargs["window_size"]:])
 
         self.buffer.append(data)
-
         if not self.buffer.full:
             return None
         else:
@@ -182,9 +192,6 @@ class RtArtifactRemover(ArtifactRemover):
         self.output = np.zeros_like(self.streamer.init_data)
         self.streamer.chunk_size = chunk_size if chunk_size else self.streamer.chunk_size
         self.solution.data_rate = self.streamer.data_loader.data_rate
-
-        import time
-
         self.update_svd_every = update_svd_every
 
         if not process_kwargs["notch_filter"]:

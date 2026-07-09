@@ -28,8 +28,10 @@ async def main(data, chunk_size=20, data_rate=2000):
         data_tmp = chunks[count % len(chunks)]
         t = np.round(t0 + np.arange(chunk_size) * dt_sample, 4)
         t0 += np.round(chunk_size * dt_sample, 4)
-        await client.send_array(data_tmp, sample_time=t)
-
+        try:
+            await client.send_array(data_tmp, sample_time=t)
+        except Exception as e:
+            break
         now = time.perf_counter()
         sleep_time = t_next - now
 
@@ -41,7 +43,9 @@ async def main(data, chunk_size=20, data_rate=2000):
 
 
 if __name__ == "__main__":
+    import numpy as np
     path_file = r"data\test001.txt"
     loader = DataLoader(path_file, center=True)
     loader._apply_stack_epochs()
+
     asyncio.run(main(loader.init_data, chunk_size=20, data_rate=loader.data_rate))

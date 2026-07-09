@@ -559,9 +559,9 @@ class StreamPlotter(Plotter):
         visible_idx = [self.channels.index(c) for c in self.visible_channels]
         raw, t_raw = self.get_raw()
         process_data = self.get_data_from_queue(visible_idx, self.queue_plot)
-        if self.paused:
-            # flush data before pause in the queue to avoid delays when resuming
-            return
+        # if self.paused or not self.parent.display_options.is_sampling_frame:
+        #     # flush data before pause in the queue to avoid delays when resuming
+        #     return
         raw, t_raw = self.adjust_to_wind((raw, t_raw), type="raw")
 
         process_data = self.adjust_to_wind(process_data, type="clean", t_raw=t_raw)
@@ -649,6 +649,8 @@ class StreamPlotter(Plotter):
             data = (data, t)
         elif type == "clean":
             for idx in data.keys():
+                if data is None or data[idx] is None or data[idx][1] is None or len(data[idx][0]) == 0:
+                    continue
                 if data[idx][1][-1] <= self.current_start_time:
                     data[idx] = (np.empty((data[idx][0].shape[0], 0)), np.empty(0))
                     continue
@@ -717,7 +719,7 @@ class StreamPlotter(Plotter):
 
     def get_raw(self):
         return self.raw_data.get()
-
+    
     def get_clean(self, idx):
         return (
             self.processed_notch_buffer[idx].get()
@@ -742,6 +744,8 @@ class StreamPlotter(Plotter):
             self.plot_list[-1].init_plot(data, data, self.parent.acquisition_rate)
             if c != 0:
                 self.plot_list[c].set_link_x(self.plot_list[0].plot_item)
+            if self.timer.isActive():
+                continue
             self.timer.start(1000 // self.rate)
 
     def update_channels_visibility(self, channels: list) -> None:
@@ -763,5 +767,27 @@ class StreamPlotter(Plotter):
         self.is_streaming = True
         # self.timer.start(1000 // self.rate)
 
+    def stop_plotting(self):
+        self.is_streaming = False
+
     def pause_plot(self, pause):
         self.paused = pause
+
+    def plot_data(self, raw, process_data, time):
+        visible_idx = [self.channels.index(c) for c in self.visible_channels]
+        for plot in self.plot_list:
+            if plot.idx in visible_idx and plot.visible is False:
+                plot.set_visible(True)
+            if plot.idx not in visible_idx and plot.visible is True:
+                plot.set_visible(False)
+
+        [
+            plot.update_plot(
+                [raw[plot.idx], process_data[plot.idx]],
+                'both',
+                True,
+                time=[time, time],
+            )
+            for plot in self.plot_list
+            if plot.idx in visible_idx
+        ]

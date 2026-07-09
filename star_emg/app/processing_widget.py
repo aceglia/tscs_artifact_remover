@@ -1,5 +1,6 @@
 from functools import partial
 import json
+import os
 import time
 
 from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout
@@ -12,7 +13,7 @@ import scipy.io as sio
 
 from biosiglive.streaming.utils import CircularBuffer
 from biosiglive import save
-from .stream_utils import CustomQueue
+from .stream_utils import CustomQueue, SharedEvent
 from .remover_widget import StreamRemover, OfflineRemover
 from ..rt_automatic_remover import RtArtifactRemover
 from .display_options import StreamDisplayWidget, OfflineDisplayWidget
@@ -545,6 +546,7 @@ class StreamProcessingWidget(ProcessingWidget):
 
     @staticmethod
     def process(
+        process_number,
         queue_in,
         queue_out,
         process_args_event,
@@ -553,6 +555,8 @@ class StreamProcessingWidget(ProcessingWidget):
         buff_len,
         channels_idxs,
         acquisition_rate,
+        queue_save=None,
+        # frame_event=None,
     ):
         """
         Start a process which will be kept active during the stream to process data in a while loop maner. This function is called by the multiprocessing module, it is threadsafe.
@@ -600,27 +604,26 @@ class StreamProcessingWidget(ProcessingWidget):
             for ch in idxs:
                 process_buffer[ch].append(data[ch][0], data[ch][1])
 
+            params_to_send = {}
             if process_args_event.is_set():
                 channel_configs = queue_process_args.get(timeout=0.02)
                 process_args_event.clear()
                 for ch in idxs:
                     if ch in channel_configs["channel_idxs"]:
                         channel_configs_glob[ch] = channel_configs
-                # print('process: received new config for channel', ch, channel_configs_glob[ch])
+                        params_to_send[ch] = channel_configs
 
             if channel_configs is not None:
                 for ch in idxs:
                     if ch in channel_configs["channel_idxs"]:
                         channel_configs_glob[ch] = channel_configs
-
             for ch in idxs:
                 buf_data, buf_t = process_buffer[ch].get()
 
                 mask = buf_t > last_t[ch]
-
                 if not np.any(mask):
                     continue
-
+                
                 t_new = buf_t[mask]
                 d_new = buf_data[0][mask]  # (n_samples,)
 
@@ -646,7 +649,16 @@ class StreamProcessingWidget(ProcessingWidget):
                     ch,
                     len(t_new),
                 )
+
                 queue_out[ch].put_nowait(res)
+                if queue_save is not None:
+                    data_dict = {'t0': buf_t[-window], 'ch': ch, 'processed': res[0][-len(t_new):], 'raw': buf_data[0, -len(t_new):], 'config': None}
+                    if ch in params_to_send:
+                        data_dict['config'] = params_to_send[ch]
+                    queue_save.put(data_dict)
+            # if all last t value are superior than the acquisition rate, we set ready
+            # if all([t_new[-1] > acquisition_rate for t_new in last_t.values()]):
+            #     frame_event.set_ready(process_number)
 
     @staticmethod
     def _process_worker(fct, data, t, process_args, idx, n_new_data):
@@ -675,7 +687,7 @@ class StreamProcessingWidget(ProcessingWidget):
         res = fct(data=data, **process_args)
         return res[0][-n_new_data:], t[-n_new_data:], idx
 
-    def init_stream(self, display_window, queue_process=None, is_running_event=None, channels_mapping=None):
+    def init_stream(self, display_window, queue_process=None, is_running_event=None, channels_mapping=None, save_queue=None):
         """
         Initialize the stream widget for processing.
         Parameters:
@@ -688,12 +700,15 @@ class StreamProcessingWidget(ProcessingWidget):
             The event to signal the processes to start.
         channels_mapping: list of list
             The list of channel indices for each process.
+        save_queue: multiprocessing.Queue
+            The queue to save the processed data.
 
         Returns:
         --------
         None
         """
         time = np.arange(0, display_window)
+        self.zarr_ds = None
         self.display_window = display_window
         self.queue_process = queue_process
         self.is_running_event = is_running_event
@@ -702,9 +717,11 @@ class StreamProcessingWidget(ProcessingWidget):
         self.n_process = min(self.n_process, int(np.ceil(len(self.channels) / 2)))
         self.queue_plot = {i: CustomQueue(name="plot") for i in range(len(self.channels))}
         self.process_args_event = [mp.Event() for _ in range(self.n_process)]
+        self.queue_save = save_queue
         self.queue_process_args = [CustomQueue(name="process_args") for _ in range(self.n_process)]
         self.parent.log_box.log(f"Starting stream with {self.n_process} processes...")
         self.fft_freqs = rfftfreq(display_window, 1 / self.acquisition_rate)
+        # self.frame_event = SharedEvent(n_process = len(self.queue_process))
         self.display_options.set_file_params(self.channels)
         self.remover_options.new_stream(self.channels, self.process_args_event, self.queue_process_args)
         self.plot.initialize_data(
@@ -714,13 +731,18 @@ class StreamProcessingWidget(ProcessingWidget):
             display_window,
             self.queue_plot,
             self.is_running_event,
-            self.channels_mapping,
+            self.channels_mapping
         )
         self.parent.toolbar.enable_filter_menu()
-        self.parent.toolbar.radio_svd_filter_button.setEnabled(True)
-        self.parent.toolbar.radio_notch_filter_button.setEnabled(False)
+        self.parent.toolbar.radio_svd_filter_button.setEnabled(False)
+        self.parent.toolbar.radio_notch_filter_button.setEnabled(True)
         self.update_filter("svd")
         self.running = True
+        if self.stream_widget.save:
+            self.save_path = self.stream_widget.save_path
+            self.display_options.set_button_on()
+        else:
+            self.save_path = None
         self.start_processing()
 
     def start_processing(self):
@@ -733,6 +755,7 @@ class StreamProcessingWidget(ProcessingWidget):
             p = mp.Process(
                 target=StreamProcessingWidget.process,
                 args=(
+                    i, 
                     self.queue_process[i],
                     queues_tmp,
                     self.process_args_event[i],
@@ -741,10 +764,13 @@ class StreamProcessingWidget(ProcessingWidget):
                     self.display_window,
                     self.channels_mapping[i],
                     self.acquisition_rate,
+                    self.queue_save,
                 ),
                 daemon=True,
             )
             self.processes.append(p)
+        if self.stream_widget.stream_save is not None:
+            self.processes.append(mp.Process(target=self.stream_widget.stream_save.run, args=(self.queue_save,), daemon=True))
         for p in self.processes:
             p.start()
 
@@ -809,3 +835,31 @@ class StreamProcessingWidget(ProcessingWidget):
         else:
             self.plot.pause_plot(False)
         self.paused = paused
+
+    def stop_recording(self):
+        self.stop_processing()
+
+    def update_frame(self, frame_number):
+        """
+        Update the epochs number and update the plot.
+        Parameters:
+        -----------
+        frame_number: int
+            The frame number to update the plot with.
+
+        Returns:
+        --------
+        None
+        """
+        if self.display_options.is_sampling_frame:
+            return
+        if self.stream_widget.save and os.path.exists(self.save_path):
+            if self.zarr_ds is None:
+                self.zarr_ds = zarr.open(self.save_path, mode='r')
+            if self.zarr_ds['raw'].shape[1] != self.stream_widget.display_window:
+                self.stream_widget.display_window = self.zarr_ds['raw'].shape[1]
+            self.plot.plot_data(
+                self.zarr_ds['raw'][:, frame_number * self.data_rate:(frame_number * self.data_rate) + self.stream_widget.display_window],
+                self.zarr_ds['processed'][:, frame_number * self.data_rate:(frame_number * self.data_rate) + self.stream_widget.display_window],
+                self.zarr_ds['time'][frame_number * self.data_rate:(frame_number * self.data_rate) + self.stream_widget.display_window],
+            )

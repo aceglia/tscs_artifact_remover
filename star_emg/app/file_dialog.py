@@ -60,7 +60,7 @@ class SaveDialog:
 
     def __init__(self, parent=None, caption="", filter="Any(*)", suffix="", dir=None, save_method=None):
         cache_dir = parent.cache.get_from_cache("last_dir")
-        dialog = QFileDialog(parent=parent, caption=caption, filter=filter, directory=cache_dir, **kwargs)
+        dialog = QFileDialog(parent=parent, caption=caption, filter=filter, directory=cache_dir)
 
         dialog.setDefaultSuffix(suffix)
         dialog.setAcceptMode(QFileDialog.AcceptSave)

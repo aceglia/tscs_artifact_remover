@@ -183,6 +183,8 @@ class StreamDisplayWidget(DisplayWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.current_frame = -1
+        self.n_frames = 0
         self._init_layout()
 
     def _init_layout(self):
@@ -193,6 +195,19 @@ class StreamDisplayWidget(DisplayWidget):
         self.display_processed_btn = QPushButton("Show processed")
         self.display_processed_btn.clicked.connect(self.on_display_processed)
         self.display_processed_btn.setEnabled(False)
+
+        self.prev_frame = QPushButton("Previous")
+        self.prev_frame.setEnabled(False)
+        self.next_frame = QPushButton("Next")
+        self.next_frame.setEnabled(False)
+        self.sampling_frame = QPushButton("Sampling frame")
+        self.sampling_frame.setEnabled(False)
+        self.prev_frame.clicked.connect(self.on_prev_frame_clicked)
+        self.next_frame.clicked.connect(self.on_next_frame_clicked)
+        self.sampling_frame.clicked.connect(self.on_sampling_frame_clicked)
+        self.input_frame = QLineEdit()
+        self.input_frame.setText("1")
+        self.input_frame.textChanged.connect(self.on_frame_changed)
 
         self.display_all_btn = QPushButton("Show all")
         self.display_all_btn.clicked.connect(self.on_display_all)
@@ -213,9 +228,47 @@ class StreamDisplayWidget(DisplayWidget):
         layout.addWidget(self.popup_button, 1, 0, 1, 2)
         layout.addWidget(self.draw_raw_button, 2, 0, 1, 1)
         layout.addWidget(self.draw_clean_button, 2, 1, 1, 1)
-        layout.addWidget(self.show_fft_button, 2, 2, 1, 1)
+        # layout.addWidget(self.show_fft_button, 2, 2, 1, 1)
         layout.addWidget(self.cursor_pos, 3, 0, 1, 4)
         self.setLayout(layout)
+
+    def on_prev_frame_clicked(self):
+        self._update_frame_number("prev")
+        self.on_frame_changed()
+    
+    def on_next_frame_clicked(self):
+        self._update_frame_number("next")
+        self.on_frame_changed()
+
+    def on_sampling_frame_clicked(self):
+        self._update_frame_number("sampling")
+        self.on_frame_changed()
+
+    def set_button_on(self):
+        self.prev_frame.setEnabled(True)
+        self.next_frame.setEnabled(True)
+        self.sampling_frame.setEnabled(True)
+    
+    def on_frame_changed(self, text=None):
+        if text == "":
+            return
+        if text:
+            self._update_frame_number(value=text)
+        self.input_frame.setText(str(self.current_frame + 1))
+        self.parent.update_frame(self.current_frame)
+    
+    def _update_frame_number(self, direction=None, value=None):
+        if direction == "prev":
+            self.current_frame -= 1
+        elif direction == "next":
+            self.current_frame += 1
+        elif direction == "sampling":
+            self.current_frame = self.n_frames - 1
+        elif value is not None:
+            self.current_frame = int(value) - 1
+        self.current_frame = min(self.current_frame, self.n_frames - 1)
+        self.current_frame = max(self.current_frame, 0)
+        return self.current_frame
 
     def set_file_params(self, channels):
         self.channels = channels
@@ -224,6 +277,9 @@ class StreamDisplayWidget(DisplayWidget):
         self.enable()
 
     def _reset(self):
+        self.current_frame = 0
+        self.n_frames = 0
+        self.input_frame.setText("1")
         self.draw_raw_button.setChecked(True)
         self.draw_clean_button.setChecked(True)
         self.show_fft_button.setChecked(False)
@@ -232,3 +288,7 @@ class StreamDisplayWidget(DisplayWidget):
     def on_draw_clicked(self):
         self.channels_to_draw = self.channel_selecter.get_channel_names()
         self.parent.plot.update_channels_visibility(self.channels_to_draw)
+
+    @property
+    def is_sampling_frame(self):
+        return self.current_frame == self.n_frames - 1

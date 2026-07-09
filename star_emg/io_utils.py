@@ -530,7 +530,7 @@ class DataLoader:
         self,
         data: ArrayLike,
         center: bool = True,
-        signal_filter: bool = True,
+        signal_filter: bool = False,
         cutoff: Union[float, List[float]] = 450.0,
         fs: float = 2000,
         order: int = 2,

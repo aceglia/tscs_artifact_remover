@@ -40,6 +40,7 @@ class DataStreamer:
         if self.offline and data is None:
             raise ValueError("Offline mode requires initial data.")
         self.load_data(data, data_loader_kwargs)
+        self.is_data_loaded = False
 
     def load_data(self, data: str | np.ndarray, data_loader_kwargs: dict):
         """
@@ -58,8 +59,8 @@ class DataStreamer:
 
     @property
     def init_data(self):
-        if not self.is_data_loaded:
-            raise ValueError("Data not loaded.")
+        # if not self.is_data_loaded:
+        #     raise ValueError("Data not loaded.")
         return self.data_loader.init_data
 
     @property

@@ -1,30 +1,474 @@
-from biosiglive import save
+import json
+from pathlib import Path
+import time
+
+import numpy as np
+import multiprocessing as mp
+from biosiglive.streaming.utils import CircularBuffer
+
+try:
+    import zarr
+    import numcodecs
+except ImportError:
+    zarr = None
+    numcodecs = None
 
 
-class SaveStream:
-    def __init__(self, save_path, buffer_len=10000):
+class ChannelState:
+    """
+    State of one acquisition channel.
+    """
+
+    def __init__(self, channel: int):
+        self.channel = channel
+        self.buffer = CircularBuffer(2, 10000)  # buffer for raw data
+        self.last_t = -np.inf
+        self.pending_config = []
+
+    def append(self, t0, raw, processed, config=None):
+        n = len(raw)
+        t = t0 + np.arange(n) * (raw.dtype.type(1) * 0 + 1)  # replaced later
+        self.buffer.append(x=np.vstack([raw, processed]), t=t)
+        self.last_t = t[-1]
+        if config is not None:
+            config["t"] = t[0]
+            self.pending_config.append(config)
+
+    def get(self):
+        data, t = self.buffer.get()
+        return data[0], data[1], t  # raw, processed, t
+
+    def get_pending_config(self):
+        configs = self.pending_config
+        self.pending_config = []
+        return configs
+
+
+class StreamSave:
+    def __init__(
+        self,
+        save_path,
+        use_zarr=False,
+        compress=True,
+        compression_level=3,
+    ):
+        self.last_saved_t = 0
         self.save_path = save_path
-        self.data = None
-        self.n_chanels = None
-        self.channels_name = None
-        self.data_rate = None
-        self.meta_info = None
-        self.counter = 0
+        self.use_zarr = use_zarr
+        if use_zarr and zarr is None:
+            raise ImportError("Zarr is not installed. Please install it to use this feature.")
+        self.compress = compress
+        self.compression_level = compression_level
+        self.data_queue = None
 
-    def init(self, n_channels, channels_name, data_rate):
-        self.data = np.empty((n_channels * 3, self.buffer_len))
+    def init_stream(self, n_channels, data_rate, channel_names=None, chunk_duration=5.0):
         self.n_chanels = n_channels
-        self.channels_name = channels_name
         self.data_rate = data_rate
+        self.dt = 1 / data_rate
+        self.channels_name = channel_names if channel_names is not None else [f"ch_{i}" for i in range(n_channels)]
+        self.chunk_duration = chunk_duration
+        self.chunk_samples = int(round(chunk_duration * data_rate))
+        self.states = {ch: ChannelState(ch) for ch in range(n_channels)}
+        self.buffer_len = self.chunk_samples * 1.2  # some extra time to avoid losing data at the end of the recording
 
-    def add_data(self, data, process_params):
-        self.data[:, self.counter : self.counter + data.shape[-1]] = data
-        self.counter += data.shape[-1]
-        # if self.counter
+    def flush_chunk(self, root=None):
+        raw = []
+        processed = []
+        config = []
+        shape = None
+        for state in self.states.values():
+            r, p, t = state.get()
+            mask = (t >= self.last_saved_t) & (t < self.last_saved_t + self.chunk_duration)
+            raw.append(r[mask])
+            processed.append(p[mask])
+            if shape is None:
+                shape = r[mask].shape
+            if r[mask].shape != shape:
+                raise ValueError(
+                    f"Shape mismatch: {r[mask].shape} vs {shape}. Maybe try to increase the buffer size or decrease the chunk duration."
+                )
+            state.raw_buffer = [r[~mask]]
+            state.processed_buffer = [p[~mask]]
+            state.time_buffer = [t[~mask]]
+            if state.pending_config:
+                config.extend(state.get_pending_config())
 
-    def _get_meta(self):
-        meta_dict = {
-            "n_chanels": self.n_chanels,
-            "channels_name": self.channels_name,
-            "data_rate": self.data_rate,
-        }
+        raw = np.vstack(raw)
+        processed = np.vstack(processed)
+
+        self.append_to_zarr(raw, processed, time, config=config, root=root)
+
+    def append_to_zarr(self, raw: np.ndarray, processed: np.ndarray, time: np.ndarray, config=[], root=None) -> None:
+        """
+        Append one chunk of data to the Zarr store.
+
+        Parameters
+        ----------
+        raw : np.ndarray
+            Raw data of shape (n_channels, n_samples).
+        processed : np.ndarray
+            Processed data of shape (n_channels, n_samples).
+        time : np.ndarray
+            Time vector of shape (n_samples,).
+        """
+        n_samples = raw.shape[1]
+        assert raw.shape == processed.shape
+        assert time.shape[0] == n_samples
+
+        self.zarr_recorder.append_signals(raw, processed, time)
+
+        if len(config) > 0:
+            for cfg in config:
+                self.zarr_recorder.save_config(cfg)
+        return self.zarr_recorder.get_size()
+    
+    def ready_until(self):
+        return min(s.last_t for s in self.states.values())
+
+    def add_packet(self, packet):
+        state = self.states[packet["ch"]]
+        raw = np.asarray(packet["raw"])
+        processed = np.asarray(packet["processed"])
+        n = len(raw)
+        t = packet["t0"] + np.arange(n) * self.dt
+        state.append(t0=packet["t0"], raw=raw, processed=processed, config=packet.get("config", None))
+        state.last_t = t[-1]
+        self.try_flush()
+
+    def try_flush(self):
+        if self.ready_until() - self.last_saved_t >= self.chunk_duration:
+            self.flush_chunk()
+            self.last_saved_t += self.chunk_duration
+
+    def run(self, queue):
+        self._init_zarr(compress=self.compress, compression_level=self.compression_level) if self.use_zarr else None
+        while True:
+            try:
+                packet = queue.get(timeout=0.01)
+                self.add_packet(packet)
+            except Exception as e:
+                pass
+
+    def _init_zarr(self, compress=True, compression_level=3):
+        """
+        Initialize the Zarr store.
+
+        Structure
+        ---------
+        recording.zarr/
+        │
+        ├── raw
+        ├── processed
+        ├── time
+        ├── events/
+        │     ├── timestamp
+        │     ├── channel
+        │     ├── type
+        │     └── payload
+        └── attrs
+        """
+        self.zarr_recorder = ZarrRecording(
+            self.save_path,
+            n_channels=self.n_chanels,
+            sampling_rate=self.data_rate,
+            channel_names=self.channels_name,
+            chunk_seconds=self.chunk_duration,
+        )
+        return self.zarr_recorder.root
+
+    # def run_save(self, queue) -> None:
+    #     """
+    #     Launch the saving process. This function will start a separate process that will handle the saving of the data.
+    #     """
+    #     self.process = mp.Process(
+    #         target=self.run, args=(queue, self.circular_buffers, self.use_zarr), daemon=True
+    #     )
+    #     self.process.start()
+
+class ZarrRecording:
+    def __init__(
+        self,
+        path: str,
+        n_channels: int,
+        sampling_rate: float,
+        channel_names: list[str],
+        chunk_seconds: float = 5.0,
+        root=None,
+    ):
+        self.path = Path(path)
+        self.n_channels = n_channels
+        self.sampling_rate = sampling_rate
+        self.chunk_samples = int(chunk_seconds * sampling_rate)
+        self.root = root if root is not None else self._create_dataset(channel_names)
+
+    # ------------------------------------------------------------------
+    # Dataset creation
+    # ------------------------------------------------------------------
+
+    def _create_dataset(self, channel_names):
+
+        root = zarr.open(self.path, mode="w")
+
+        # ==============================================================
+        # Global metadata
+        # ==============================================================
+
+        root.attrs.update(
+            {
+                "sampling_rate": self.sampling_rate,
+                "n_channels": self.n_channels,
+                "channel_names": channel_names,
+                "format_version": "1.0",
+            }
+        )
+
+        # ==============================================================
+        # Signals
+        # ==============================================================
+
+        signals = root.create_group("signals")
+
+        signals.create_array(
+            "raw",
+            shape=(self.n_channels, 0),
+            chunks=(self.n_channels, self.chunk_samples),
+            dtype=np.float64,
+        )
+
+        signals.create_array(
+            "processed",
+            shape=(self.n_channels, 0),
+            chunks=(self.n_channels, self.chunk_samples),
+            dtype=np.float64,
+        )
+
+        signals.create_array(
+            "time",
+            shape=(0,),
+            chunks=(self.chunk_samples,),
+            dtype=np.float64,
+        )
+
+        # ==============================================================
+        # Configurations
+        # ==============================================================
+        root.create_group("configs")
+        for ch in range(self.n_channels):
+            root["configs"].create_group(f"channel_{ch:03d}")
+
+        return root
+
+    # ------------------------------------------------------------------
+    # Append signals
+    # ------------------------------------------------------------------
+
+    def append_signals(
+        self,
+        raw: np.ndarray,
+        processed: np.ndarray,
+        time: np.ndarray,
+    ):
+
+        sig = self.root["signals"]
+
+        sig["raw"].append(raw, axis=1)
+        sig["processed"].append(processed, axis=1)
+        sig["time"].append(time)
+
+    # ------------------------------------------------------------------
+    # Save a configuration snapshot
+    # ------------------------------------------------------------------
+    def append_config(
+        self,
+        channel: list[int] | int,
+        timestamp: float,
+        parameters: dict,
+    ):
+        if isinstance(channel, list):
+            for ch in channel:
+                self.append_config(ch, timestamp, parameters)
+            return
+
+        channel_group = self.root["configs"][f"channel_{channel:03d}"]
+
+        cfg_id = len(channel_group)
+
+        cfg = channel_group.create_group(f"{cfg_id:06d}")
+
+        cfg.attrs["timestamp"] = float(timestamp)
+
+        for key, value in parameters.items():
+
+            if isinstance(value, np.ndarray):
+                cfg.create_array(key, data=value)
+
+            elif isinstance(value, (list, tuple)):
+                cfg.create_array(key, data=np.asarray(value))
+
+            else:
+                cfg.attrs[key] = value
+
+    def read(
+        self,
+        channels=None,
+        sample_slice=slice(None),
+        processed=True,
+    ):
+        """
+        Read a subset of the recording.
+
+        Parameters
+        ----------
+        channels : int | list[int] | None
+            Channels to read.
+        sample_slice : slice
+            Samples to read.
+        processed : bool
+            Read processed or raw signal.
+        """
+
+        signal_name = "processed" if processed else "raw"
+
+        signals = self.root["signals"]
+
+        if channels is None:
+            channels = slice(None)
+
+        data = signals[signal_name][channels, sample_slice]
+        time = signals["time"][sample_slice]
+
+        return data, time
+
+    def read_time(
+        self,
+        t_start,
+        t_stop,
+        channels=None,
+        processed=True,
+    ):
+
+        time = self.root["signals"]["time"][:]
+
+        start = np.searchsorted(time, t_start)
+        stop = np.searchsorted(time, t_stop)
+        return self.read(
+            channels=channels,
+            sample_slice=slice(start, stop),
+            processed=processed,
+        )
+
+    def read_config(self, channel: int, config_id: int) -> dict:
+        """
+        Read one configuration snapshot and return it as a dictionary.
+
+        Parameters
+        ----------
+        channel : int
+            Channel number.
+        config_id : int
+            Configuration index.
+
+        Returns
+        -------
+        dict
+            Configuration parameters.
+        """
+
+        cfg_path = f"configs/channel_{channel:03d}/{config_id:06d}"
+
+        cfg = self.root[cfg_path]
+
+        config = dict(cfg.attrs)
+
+        # Read array parameters
+        for key in cfg.array_keys():
+            config[key] = cfg[key][:]
+
+        return config
+
+    def read_all_configs(self) -> dict:
+        """
+        Read all configuration snapshots for all channels.
+
+        Returns
+        -------
+        dict
+            Dictionary organized as:
+
+            {
+                "channel_xxx": {
+                    config_id: {
+                        parameter: value
+                    }
+                }
+            }
+        """
+
+        all_configs = {}
+
+        configs = self.root["configs"]
+
+        for channel_name in configs.group_keys():
+
+            channel_group = configs[channel_name]
+
+            all_configs[channel_name] = {}
+
+            for config_name in channel_group.group_keys():
+                cfg = channel_group[config_name]
+                config = dict(cfg.attrs)
+                # Load array parameters
+                for key in cfg.array_keys():
+                    value = cfg[key][:]
+                    # convert numpy arrays to lists
+                    if value.ndim == 1:
+                        value = value.tolist()
+
+                    config[key] = value
+
+                config_id = int(config_name)
+
+                all_configs[channel_name][config_id] = config
+
+        return all_configs
+
+    def get_duration(self):
+        """
+        Get the size of the recording in seconds.
+        """
+        time = self.root["signals"]["time"][:]
+        if len(time) == 0:
+            return 0.0
+        return float(time[-1] - time[0])
+
+    def get_size(self):
+        """
+        Get the size of the recording in samples.
+        """
+        return self.root["signals"]["raw"].shape[1]
+
+    @classmethod
+    def load_dataset(cls, path):
+        """
+        Load an existing recording dataset.
+
+        Parameters
+        ----------
+        path : str
+            Path to the recording dataset.
+        """
+            
+        root = zarr.open(path, mode="r")
+        return cls(
+            path=path,
+            root=root,
+            n_channels=root.attrs["n_channels"],
+            sampling_rate=root.attrs["sampling_rate"],
+            channel_names=root.attrs["channel_names"],
+        )
+
+    def close(self):
+        """
+        Close the Zarr dataset.
+        """
+        self.root.store.close()

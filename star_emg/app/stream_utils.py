@@ -1,4 +1,5 @@
 import numpy as np
+import multiprocessing as mp
 from multiprocessing import RawArray, RawValue, Queue
 import time
 
@@ -148,3 +149,25 @@ class SharedArray:
 
     def export(self):
         return (self.raw_array, self.last_len, self.version, self.size, self.array.dtype)
+
+
+class SharedEvent:
+    def __init__(self, n_processes):
+        self.ready = mp.Array("b", [False] * n_processes)
+        self.lock = mp.Lock()
+        self.all_ready = mp.Event()
+
+    def set_ready(self, idx):
+        with self.lock:
+            self.ready[idx] = True
+            if all(self.ready):
+                self.all_ready.set()
+
+    def set_not_ready(self, idx):
+        with self.lock:
+            self.ready[idx] = False
+            self.all_ready.clear()
+        
+
+    def wait(self):
+        self.all_ready.wait()

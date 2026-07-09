@@ -1,3 +1,5 @@
+import os
+
 from PyQt5.QtWidgets import (
     QMessageBox,
     QDialog,
@@ -9,6 +11,7 @@ from PyQt5.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
 )
+from numpy import save
 
 
 def popup_warning_save(text, title, fct):
@@ -168,3 +171,130 @@ class ChannelsPopup(QDialog):
     @property
     def channels(self):
         return self.get_channels()
+
+class SaveStreamPopup(QDialog):
+    """
+    Windows for the configuration of the saving options when setting up a new stream.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Saving options")
+        self.save_path = None
+        self.use_zarr = True
+        self.compress = True
+        self.compression_level = 3
+
+
+        self._create_layout()
+
+    def _create_layout(self):
+        layout = QGridLayout()
+        layout.addWidget(QLabel("Save path:"), 0, 0)
+        self.save_path_input = QLineEdit("")
+        self.save_path_input.setText(self.save_path if self.save_path is not None else "")
+        layout.addWidget(self.save_path_input, 0, 1, 1, 2)
+
+        # browse button to select the save path
+        self.browse_button = QPushButton("Browse")
+        self.browse_button.clicked.connect(self.browse_save_path)
+        layout.addWidget(self.browse_button, 0, 3)
+
+        # check box to increment the suffix of the file name to avoid overwriting existing files
+        self.increment_suffix_checkbox = QCheckBox("Increment file name")
+        self.increment_suffix_checkbox.setChecked(True)
+        layout.addWidget(self.increment_suffix_checkbox, 1, 0, 1, 3)
+
+        self.use_zarr_checkbox = QCheckBox("Use Zarr format")
+        self.use_zarr_checkbox.setChecked(self.use_zarr)
+        self.use_zarr_checkbox.setToolTip("Use Zarr format for saving data. Requires the 'zarr' package to be installed.")
+        self.use_zarr_checkbox.stateChanged.connect(self._toggle_zarr_options)
+        layout.addWidget(self.use_zarr_checkbox, 2, 0, 1, 3)
+
+        self.compress_checkbox = QCheckBox("Compress data")
+        self.compress_checkbox.setEnabled(self.use_zarr)
+        self.compress_checkbox.setChecked(self.compress)
+        self.compress_checkbox.setToolTip("Compress data when saving. Requires the 'numcodecs' package to be installed.")
+        self.compress_checkbox.stateChanged.connect(self._check_compress)
+        layout.addWidget(self.compress_checkbox, 3, 0, 1, 3)
+
+        layout.addWidget(QLabel("Compression level (1-9):"), 4, 0)
+        self.compression_level_input = QLineEdit(str(self.compression_level))
+        self.compression_level_input.setEnabled(self.use_zarr and self.compress)
+        self.compression_level_input.setToolTip("Set the compression level for saving data. 1 is the fastest, 9 is the most compressed.")
+        self.compression_level_input.textChanged.connect(self._check_compression_level)
+        layout.addWidget(self.compression_level_input, 4, 1)
+
+        self.ok_button = QPushButton("OK")
+        self.ok_button.clicked.connect(self.accept_custom)
+        layout.addWidget(self.ok_button, 5, 0)
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        layout.addWidget(self.cancel_button, 5, 1)
+
+        self.setLayout(layout)
+
+    def _toggle_zarr_options(self, state):
+        self.use_zarr = state
+        self.compress_checkbox.setEnabled(state)
+        self.compression_level_input.setEnabled(state and self.compress_checkbox.isChecked())
+
+    def _check_compress(self, state):
+        self.compress = state
+        self.compression_level_input.setEnabled(state and self.use_zarr_checkbox.isChecked())
+    
+    def _check_compression_level(self):
+        if self.compression_level_input.text() == "":
+            return
+        try:
+            level = int(self.compression_level_input.text())
+            if level < 1 or level > 9:
+                raise ValueError
+            self.compression_level = level
+        except ValueError:
+            QMessageBox.warning(self, "Warning", "Compression level must be an integer between 1 and 9.")
+            self.compression_level_input.setText(str(self.compression_level))
+
+    def accept_custom(self):
+        if self.save_path_input.text() == "":
+            QMessageBox.warning(self, "Warning", "Please provide a save path.")
+            return
+        self.accept()
+
+    def increment_suffix(self, path):
+        """
+        Increment the suffix from 00x to 00x+1 to avoid overwriting existing files.
+        Parameters:
+        -----------
+        """
+        import os
+        base, ext = os.path.splitext(path)
+        if base[-3:].isdigit():
+            num = int(base[-3:]) + 1
+            new_base = f"{base[:-3]}{num:03d}"
+        else:
+            new_base = f"{base}001"
+        return f"{new_base}{ext}"
+
+    def get_save_path(self):
+        # check if the path exists 
+        path = self.save_path_input.text()
+        if path == "" and self.save_path is not None:
+            path = self.save_path
+        elif path != "":
+            self.save_path = path
+
+        if os.path.exists(path):
+            if self.increment_suffix_checkbox.isChecked():
+                return self.increment_suffix(path)
+            else:
+                return path
+        return path
+    
+    def browse_save_path(self):
+        from PyQt5.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(self, "Select save path", "", "All Files (*)")
+        if path:
+            self.save_path_input.setText(path)
+            self.save_path = path

@@ -1,13 +1,14 @@
 import threading
 
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QDialog, QLabel
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QDialog, QLabel, QCheckBox
 from PyQt5.QtCore import QObject, pyqtSignal
 
 import numpy as np
 import multiprocessing as mp
 from ..processing_utils import Quality
-from .popup_utils import ChannelsPopup
+from .popup_utils import ChannelsPopup, SaveStreamPopup
 from .stream_utils import CustomQueue
+from .save_utils import StreamSave
 from biosiglive.streaming.async_server import AsyncTCPServer
 import asyncio
 
@@ -33,6 +34,9 @@ class StreamWidget(QWidget):
         self.bridge = Bridge()
         self.n_process = parent.n_process
         self.paused = False
+        self.save = False
+        self.save_popup = None
+        self.stream_save = None
 
     def task(self, d, t):
         """
@@ -84,12 +88,28 @@ class StreamWidget(QWidget):
         self.layout.addWidget(self.set_channels_button)
         self.layout.addWidget(QLabel("Display last (s):"))
         self.layout.addWidget(self.display_wind_in)
+
+        # add checkbox to save the stream
+        self.save_checkbox = QCheckBox("Save")
+        self.save_checkbox.setCheckable(True)
+        self.save_checkbox.clicked.connect(self._save_checkbox)
+        self.layout.addWidget(self.save_checkbox)
+
+        self.save_popup_button = QPushButton("Save options")
+        self.save_popup_button.clicked.connect(self._save_popup)
+        self.layout.addWidget(self.save_popup_button)
+
         self.setLayout(self.layout)
 
     def _play(self):
         """
         Start the stream.
         """
+        if self.save_popup is not None:
+            self._get_save_options()
+            self.stream_save = StreamSave(save_path=self.save_path, use_zarr=self.use_zarr, compress=self.compress, compression_level=self.compression_level)
+            save_queue = CustomQueue(name='save_queue')
+            self.stream_save.init_stream(n_channels=len(self.channels), data_rate=self.acquisition_rate, channel_names=self.channels)
         self.stop_button.setEnabled(True)
         self.pause_button.setEnabled(True)
         self.play_button.setEnabled(False)
@@ -102,16 +122,19 @@ class StreamWidget(QWidget):
             self.channels_mapping = {i: [] for i in range(self.n_process)}
             for i in range(len(self.channels)):
                 self.channels_mapping[i % self.n_process].append(i)
-            self.queue_process = [CustomQueue(maxwrite=2000) for _ in range(self.n_process)]
+            self.queue_process = [CustomQueue() for _ in range(self.n_process)]
             self.is_running_event = mp.Event()
-            thread = threading.Thread(target=self._run_asyncio, daemon=True)
-            thread.start()
+
+            self.play_thread = threading.Thread(target=self._run_asyncio, daemon=True)
+            self.play_thread.start()
             self.parent.init_stream(
                 self.display_window,
                 queue_process=self.queue_process,
                 is_running_event=self.is_running_event,
                 channels_mapping=self.channels_mapping,
+                save_queue=save_queue if self.save else None,
             )
+
         else:
             self.parent.set_paused(False)
             self.paused = False
@@ -124,14 +147,55 @@ class StreamWidget(QWidget):
         self.server.init_buffer(len(self.channels), dt=1 / self.acquisition_rate)
         asyncio.run(self.server.start(task=self.task))
 
+    def _save_checkbox(self):
+        """
+        Function to handle the save checkbox.
+        """
+        self.save = self.save_checkbox.isChecked()
+        if self.save_popup is None:
+            self._save_popup()
+
+    def _save_popup(self):
+        """
+        Function to handle the save popup.
+        """
+        if self.save_popup is None:
+            self.save_popup = SaveStreamPopup()
+
+        if self.save_popup.exec_() == QDialog.Accepted:
+            self._get_save_options()
+            
+    def _get_save_options(self):
+        self.save_path = self.save_popup.get_save_path()
+        self.use_zarr = self.save_popup.use_zarr
+        self.compress = self.save_popup.compress
+        self.compression_level = self.save_popup.compression_level
+
     def _stop(self):
         """
         Stop the stream.
         """
         self.play_button.setEnabled(True)
+        self.parent.stop_recording()
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
-        asyncio.run(self.server.stop())
+        if self.server is not None and self.server.loop is not None:
+            future = asyncio.run_coroutine_threadsafe(
+                self.server.stop(),
+                self.server.loop,
+            )
+
+            # Wait for stop() to finish (optional but recommended)
+            future.result(timeout=5)
+
+        self.is_running_event.clear()
+
+        if self.play_thread.is_alive():
+            self.play_thread.join(timeout=5)
+        # asyncio.create_task(self._async_stop())
+        # self.play_thread.join()
+        # self.is_running_event.clear()
+        # self.parent.stop_recording()
 
     def _pause(self):
         """

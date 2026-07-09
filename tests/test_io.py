@@ -127,11 +127,11 @@ def test_flatten_unflatten():
 
 
 # =============================================================================
-# stack batch
+# stack epochs
 # =============================================================================
 
 
-def test_apply_stack_batch():
+def test_apply_stack_epochs():
     data = np.random.randn(3, 4, 100)
 
     loader = DataLoader(
@@ -142,9 +142,9 @@ def test_apply_stack_batch():
 
     original_shape = data.shape
 
-    loader._apply_stack_batch()
+    loader._apply_stack_epochs()
 
-    assert loader.stack_batch_applied
+    assert loader.stack_epochs_applied
 
     restored = loader.get_unstacked_data()
 
