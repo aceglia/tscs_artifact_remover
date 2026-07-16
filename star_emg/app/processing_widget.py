@@ -439,7 +439,6 @@ class OfflineProcessingWidget(ProcessingWidget):
             json.dump(config, f, indent=4)
         self.log_box.log(f"Configuration saved at: {path}")
 
-
     def _convert_quality_to_dict(self, quality):
         """ "
         Convert the quality results to a dictionary for display.
@@ -688,7 +687,7 @@ class StreamProcessingWidget(ProcessingWidget):
             # if all last t value are superior than the acquisition rate, we set ready
             # if all([t_new[-1] > acquisition_rate for t_new in last_t.values()]):
             #     frame_event.set_ready(process_number)
-        
+
     @staticmethod
     def _add_to_save(queue, t0, ch, processed_data, raw_data, params_to_send):
         if queue is not None:
@@ -814,17 +813,19 @@ class StreamProcessingWidget(ProcessingWidget):
             )
             self.processes.append(p)
         if self.stream_widget.stream_save is not None:
-            self.save_process = (
-                mp.Process(
-                    target=self.stream_widget.stream_save.run,
-                    args=(self.queue_save, self.channels, self.acquisition_rate, self.finish_saving,),
-                    daemon=False,
-                )
+            self.save_process = mp.Process(
+                target=self.stream_widget.stream_save.run,
+                args=(
+                    self.queue_save,
+                    self.channels,
+                    self.acquisition_rate,
+                    self.finish_saving,
+                ),
+                daemon=False,
             )
             self.save_process.start()
         for p in self.processes:
             p.start()
-    
 
     @property
     def acquisition_rate(self):
@@ -843,7 +844,6 @@ class StreamProcessingWidget(ProcessingWidget):
             config_data = json.load(f)
         self.stream_widget.set_value_from_config(config_data)
 
-        
     def save_config(self, path=None):
         """
         Save the configuration file in JSON format.

@@ -286,7 +286,7 @@ class StreamDisplayWidget(DisplayWidget):
         self.update_draw_params()
 
     def on_draw_clicked(self):
-        self.channels_to_draw = self.channel_selecter.get_channel_names()
+        self.channels_to_draw = self.channel_selecter.get_selected_channels()
         self.parent.plot.update_channels_visibility(self.channels_to_draw)
 
     @property

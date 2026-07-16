@@ -272,7 +272,7 @@ class Plotter(pg.GraphicsLayoutWidget):
         """
         Init the channel plots
         """
-        for c, channel in enumerate(self.channels):
+        for c, channel in zip(self.channel_idxs, self.channel_names):
             data = [self.raw_data[self.idx_to_plot, c, :], self.clean_signal[self.idx_to_plot, c, :]]
             self.plot_list.append(ChannelPlot(self, channel, c))
             self.plot_list[-1].init_plot(data, [self.time[0]] * 2, self.parent.remover_options.get_rate())
@@ -288,7 +288,7 @@ class Plotter(pg.GraphicsLayoutWidget):
         return self.plot_list[idxs.index(idx)]
 
     def _reorder_channels(self, channels):
-        return [c for c in self.channels if c in channels]
+        return [c for c in self.channel_names if c in channels]
 
     def update_draw_params(self, plot_raw, plot_clean, plot_fft):
         """
@@ -326,6 +326,25 @@ class Plotter(pg.GraphicsLayoutWidget):
     def update_mouse_pos(self, pos):
         self.parent.update_mouse_pos(pos)
 
+    @property
+    def channel_names(self):
+        return [chan[1] for chan in self.channels]
+
+    @property
+    def channel_idxs(self):
+        return [chan[0] for chan in self.channels]
+    
+    @property
+    def visible_channel_names(self):
+        if self.visible_channels is None:
+            return []
+        return [chan[1] for chan in self.visible_channels]
+
+    @property
+    def visible_channel_idxs(self):
+        if self.visible_channels is None:
+            return []
+        return [chan[0] for chan in self.visible_channels]
 
 class OfflinePlotter(Plotter):
     """
@@ -352,8 +371,8 @@ class OfflinePlotter(Plotter):
         cleaned_svd: np.ndarray, optional
             The cleaned data after SVD filtering. If None, the raw data will be used as the clean data for the SVD filter.
         """
-        self.channels = channels
-        self.visible_channels = self.parent.display_options.channel_selecter.get_channel_names()
+        self.channels = [(c, chan) for c, chan in enumerate(channels)]
+        self.visible_channels = self.parent.display_options.channel_selecter.get_selected_channels()
         self.raw_data = data
         self.clean_notch = data.copy() if cleaned_notch is None else cleaned_notch
         self.clean_svd = data.copy() if cleaned_svd is None else cleaned_svd
@@ -408,7 +427,7 @@ class OfflinePlotter(Plotter):
         update_time: bool, optional
             Whether to update the time of the plot. Default is False.
         """
-        visible_idx = [self.channels.index(c) for c in self.visible_channels]
+        visible_idx = self.visible_channel_idxs
         has_changed = self.idx_to_plot != idx or force
         self.idx_to_plot = idx
         time_tmp = self.time[idx]
@@ -439,11 +458,11 @@ class OfflinePlotter(Plotter):
         channels: list
             The list of channel names to plot.
         """
-        channels = [i[1] for i in channels]
-        reordered_channels = self._reorder_channels(channels)
-        if self.visible_channels == reordered_channels:
-            return
-        self.visible_channels = reordered_channels
+        # channels = [i[1] for i in channels]
+        # # reordered_channels = self._reorder_channels(channels)
+        # if self.visible_channels == reordered_channels:
+        #     return
+        self.visible_channels = channels
         self.update_frame(self.idx_to_plot)
 
     def update_filter(self, filter_type):
@@ -510,8 +529,8 @@ class StreamPlotter(Plotter):
         self.display_window_sec = self.display_windows / self.parent.acquisition_rate
         self.processed_svd_buffer = {i: CircularBuffer(1, self.display_windows) for i in range(len(channels))}
         self.processed_notch_buffer = {i: CircularBuffer(1, self.display_windows) for i in range(len(channels))}
-        self.channels = channels
-        self.visible_channels = self.parent.display_options.channel_selecter.get_channel_names()
+        self.channels = [(c, chan) for c, chan in enumerate(channels)]
+        self.visible_channels = self.parent.display_options.channel_selecter.get_selected_channels()
         self.raw_data = data_buffer
         self.time = time
         self.current_filter = "notch"
@@ -556,7 +575,7 @@ class StreamPlotter(Plotter):
         if not self.is_running_event.is_set() and not force:
             return
 
-        visible_idx = [self.channels.index(c) for c in self.visible_channels]
+        visible_idx = self.visible_channel_idxs
         raw, t_raw = self.get_raw()
         process_data = self.get_data_from_queue(visible_idx, self.queue_plot)
         # if self.paused or not self.parent.display_options.is_sampling_frame:
@@ -738,7 +757,7 @@ class StreamPlotter(Plotter):
         Initialize the plots for the live plotter. Put NaN value first to have a already present time axis.
         """
         nan_vect = np.full(self.display_windows, np.nan)
-        for c, channel in enumerate(self.channels):
+        for c, channel in zip(self.channel_idxs, self.channel_names):
             data = [nan_vect, nan_vect]
             self.plot_list.append(ChannelPlot(self, channel, c))
             self.plot_list[-1].init_plot(data, data, self.parent.acquisition_rate)
@@ -774,7 +793,7 @@ class StreamPlotter(Plotter):
         self.paused = pause
 
     def plot_data(self, raw, process_data, time):
-        visible_idx = [self.channels.index(c) for c in self.visible_channels]
+        visible_idx = self.visible_channel_idxs
         for plot in self.plot_list:
             if plot.idx in visible_idx and plot.visible is False:
                 plot.set_visible(True)

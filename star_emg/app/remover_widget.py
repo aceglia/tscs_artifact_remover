@@ -693,6 +693,24 @@ class OfflineRemover(Remover):
 
     def get_channels(self):
         return self.remover.data_loader.channel_names
+    
+    def set_channels(self, channels: list):
+        """
+        Set the channels to be processed.
+        Parameters:
+        -----------
+        channels: list
+            The list of channels to be processed.
+
+        Returns:
+        --------
+        None
+        """
+        self.remover.data_loader.channel_names = channels
+        for options in [self.notch_options, self.svd_options]:
+            options.channels = channels
+            if options.channel_selecter is not None:
+                options.channel_selecter.set_channels(channels)
 
     def get_data(self, epochs: list = None, channel: list = None) -> np.ndarray:
         """

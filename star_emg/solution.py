@@ -87,7 +87,7 @@ class Solution:
 
         self.output = self.output.reshape(initial_data_shape)
         self.init_data = self.init_data.reshape(initial_data_shape)
-        if np.any(self.s, axis=-1):
+        if self.s is not None and self.s.ndim > 2:
             self.s = self.s.reshape((initial_data_shape[0], initial_data_shape[1], -1))
             self.s_reduced = self.s_reduced.reshape((initial_data_shape[0], initial_data_shape[1], -1))
         else:
