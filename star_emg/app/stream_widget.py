@@ -1,3 +1,4 @@
+from pathlib import Path
 import threading
 
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QDialog, QLabel, QCheckBox
@@ -37,6 +38,7 @@ class StreamWidget(QWidget):
         self.save = False
         self.save_popup = None
         self.stream_save = None
+        self.save_path = None
 
     def task(self, d, t):
         """
@@ -105,14 +107,13 @@ class StreamWidget(QWidget):
         """
         Start the stream.
         """
+        self.parent.parent.toolbar.save_button.setEnabled(False)
+        self.parent.parent.toolbar.save_as_button.setEnabled(False)
         if self.save_popup is not None:
             self._get_save_options()
             self.stream_save = StreamSave(save_path=self.save_path, use_zarr=self.use_zarr, compress=self.compress, compression_level=self.compression_level)
             save_queue = CustomQueue(name='save_queue')
-            self.stream_save.init_stream(n_channels=len(self.channels), data_rate=self.acquisition_rate, channel_names=self.channels)
-        self.stop_button.setEnabled(True)
-        self.pause_button.setEnabled(True)
-        self.play_button.setEnabled(False)
+        self._change_widget_state(not_playing=False)
         if not self.paused:
             self.parent.parent.log_box.log(
                 f"Launching the stream at: {self.address}:{self.port} waiting for a client..."
@@ -134,7 +135,6 @@ class StreamWidget(QWidget):
                 channels_mapping=self.channels_mapping,
                 save_queue=save_queue if self.save else None,
             )
-
         else:
             self.parent.set_paused(False)
             self.paused = False
@@ -166,36 +166,29 @@ class StreamWidget(QWidget):
             self._get_save_options()
             
     def _get_save_options(self):
-        self.save_path = self.save_popup.get_save_path()
+        self.save_path = self.save_popup.save_path
         self.use_zarr = self.save_popup.use_zarr
         self.compress = self.save_popup.compress
         self.compression_level = self.save_popup.compression_level
+        self.save = True
 
     def _stop(self):
         """
         Stop the stream.
         """
-        self.play_button.setEnabled(True)
+        self._change_widget_state(not_playing=True)
         self.parent.stop_recording()
-        self.stop_button.setEnabled(False)
-        self.pause_button.setEnabled(False)
         if self.server is not None and self.server.loop is not None:
             future = asyncio.run_coroutine_threadsafe(
                 self.server.stop(),
                 self.server.loop,
             )
-
-            # Wait for stop() to finish (optional but recommended)
             future.result(timeout=5)
-
         self.is_running_event.clear()
-
         if self.play_thread.is_alive():
             self.play_thread.join(timeout=5)
-        # asyncio.create_task(self._async_stop())
-        # self.play_thread.join()
-        # self.is_running_event.clear()
-        # self.parent.stop_recording()
+        self.parent.parent.toolbar.save_button.setEnabled(True)
+        self.parent.parent.toolbar.save_as_button.setEnabled(True)
 
     def _pause(self):
         """
@@ -206,12 +199,16 @@ class StreamWidget(QWidget):
         self.paused = True
         self.parent.set_paused(True)
 
-    def _set_channels(self):
+    def _set_channels(self, skip_dialog=True):
         """
         Set the channels for the stream so that the server can know how many channels are beeing streamed.
         """
         popup = ChannelsPopup(channels=self.channels)
-        if popup.exec_() == QDialog.Accepted:
+        if not skip_dialog:
+            if popup.exec_() == QDialog.Accepted:
+                self.channels = popup.channels
+                self.parent.display_options.set_file_params(self.channels)
+        else:
             self.channels = popup.channels
             self.parent.display_options.set_file_params(self.channels)
         self.play_button.setEnabled(self.channels is not None)
@@ -224,14 +221,62 @@ class StreamWidget(QWidget):
             return self.server.buffer.get()
         else:
             return None
+    
+    def _change_widget_state(self, not_playing: bool):
+        self.adress_in.setEnabled(not_playing)
+        self.port_in.setEnabled(not_playing)
+        self.ac_rate_in.setEnabled(not_playing)
+        self.set_channels_button.setEnabled(not_playing)
+        self.display_wind_in.setEnabled(not_playing)
+        self.save_checkbox.setEnabled(not_playing)
+        self.stop_button.setEnabled(not not_playing)
+        self.pause_button.setEnabled(not not_playing)
+        self.play_button.setEnabled(not_playing)
+        self.save_popup_button.setEnabled(not_playing)
+
+    def set_value_from_config(self, config):
+        """
+        Set the values of the widget from a configuration dictionary.
+        """
+        self.adress_in.setText(config["address"])
+        self.port_in.setText(str(config["port"]))
+        self.ac_rate_in.setText(str(config["acquisition_rate"]))
+        self.display_wind_in.setText(str(config["display_window"] / config["acquisition_rate"]).format("%0.2f"))
+        if len(config["channel_names"]) > 0:
+            self.channels = config["channel_names"]
+            self._set_channels(skip_dialog=True)
+
+        if config['save_path'] is not None:
+            self.save_popup = SaveStreamPopup()
+            save_path = Path(config['save_path'])
+            save_directory = save_path.parent
+            save_filename = save_path.name
+            self.save_popup.save_fold_input.setText(str(save_directory))
+            self.save_popup.save_name_input.setText(str(save_filename))
+            self.save_popup._update_fold_path(str(save_directory))
+            self.save_popup._update_save_name(str(save_filename))
+            if save_filename[-3:].isdigit():
+                self.save_popup.increment_suffix_checkbox.setChecked(config["increment_suffix"])
+                # self.save_popup.
+            # self.save_popup.use_zarr = config['use_zarr']
+            # self.save_popup.compress = config['compress']
+            # self.save_popup.compression_level = config['compression_level']
+            self.save_checkbox.setChecked(True)
 
     @property
     def address(self):
         return self.adress_in.text()
 
     @property
+    def increment_suffix(self):
+        if self.save_popup is not None:
+            return self.save_popup.increment_suffix_checkbox.isChecked()
+        else:
+            return False
+
+    @property
     def display_window(self):
-        return int(self.display_wind_in.text()) * self.acquisition_rate
+        return int(float(self.display_wind_in.text()) * self.acquisition_rate)
 
     @property
     def port(self):
@@ -239,4 +284,4 @@ class StreamWidget(QWidget):
 
     @property
     def acquisition_rate(self):
-        return int(self.ac_rate_in.text())
+        return float(self.ac_rate_in.text())

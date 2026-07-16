@@ -162,7 +162,7 @@ class GUI(QMainWindow):
         try:
             self._save_config(self.save_dialog.filename)
         except Exception as e:
-            self.log_box.log("Error occured while saving the files: ", e)
+            self.log_box.log("Error occured while saving the files: ", str(repr(e)))
 
     def set_saved_ok(self, saved_ok):
         self.saved_ok = saved_ok

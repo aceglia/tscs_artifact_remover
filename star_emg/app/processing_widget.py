@@ -1,9 +1,10 @@
+from calendar import c
 from functools import partial
 import json
 import os
 import time
 
-from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout, QFileDialog
 from PyQt5.QtCore import Qt, QThreadPool, QTimer
 
 import numpy as np
@@ -13,7 +14,7 @@ import scipy.io as sio
 
 from biosiglive.streaming.utils import CircularBuffer
 from biosiglive import save
-from .stream_utils import CustomQueue, SharedEvent
+from .stream_utils import CustomQueue
 from .remover_widget import StreamRemover, OfflineRemover
 from ..rt_automatic_remover import RtArtifactRemover
 from .display_options import StreamDisplayWidget, OfflineDisplayWidget
@@ -129,6 +130,7 @@ class OfflineProcessingWidget(ProcessingWidget):
         self.canceled = False
         self.quality_notch = Quality()
         self.quality_svd = Quality()
+        self.file_path = None
 
     def update_frame(self, frame_number):
         """
@@ -330,7 +332,7 @@ class OfflineProcessingWidget(ProcessingWidget):
         )
         self.plot.enable_config_button(channel_idxs)
 
-    def save_file(self, path, ext='.bio'):
+    def save_file(self, path, ext=".bio"):
         """
         Save the processed and raw data to a file.
         Parameters:
@@ -349,17 +351,21 @@ class OfflineProcessingWidget(ProcessingWidget):
             "channels": self.remover_options.get_channels(),
             "rate": self.remover_options.get_rate(),
         }
-        if ext == '.mat':
+        if ext == ".mat":
             sio.savemat(path, dic_to_save)
-        elif ext == '.bio':
+        elif ext == ".bio":
             save(dic_to_save, path)
-        elif ext == '.txt':
+        elif ext == ".txt":
             channels = self.remover_options.get_channels()
-            suffix = ['', '_clean_svd', '_clean_notch']
-            channels_str = sum([[chan + s for chan in channels ] for s in suffix], [])
-            channels_str = ['time'] + channels_str
+            suffix = ["", "_clean_svd", "_clean_notch"]
+            channels_str = sum([[chan + s for chan in channels] for s in suffix], [])
+            channels_str = ["time"] + channels_str
             time_vector = self.remover_options.remover.data_loader.time_vector
-            write_txt_file(np.hstack((time_vector, self.plot.raw_data, self.plot.clean_svd, self.plot.clean_notch)), path=path, headers=channels_str)
+            write_txt_file(
+                np.hstack((time_vector, self.plot.raw_data, self.plot.clean_svd, self.plot.clean_notch)),
+                path=path,
+                headers=channels_str,
+            )
         # export_csv(path, **dic_to_save)
         # self.parent.log_box.log(
         #     "To use the processed file in signal you can import the txt file saved at " + path.replace(".mat", ".txt")
@@ -422,6 +428,7 @@ class OfflineProcessingWidget(ProcessingWidget):
         None
         """
         config = {
+            "mode": "offline",
             "file_path": self.file_path,
             "process_file_path": self.process_file_path,
             "preprocessing_params": self.remover_options.remover.data_loader.filtering_params,
@@ -430,6 +437,8 @@ class OfflineProcessingWidget(ProcessingWidget):
         }
         with open(path, "w") as f:
             json.dump(config, f, indent=4)
+        self.log_box.log(f"Configuration saved at: {path}")
+
 
     def _convert_quality_to_dict(self, quality):
         """ "
@@ -542,6 +551,7 @@ class StreamProcessingWidget(ProcessingWidget):
         self.display_options = StreamDisplayWidget(self)
         self.plot = StreamPlotter(self, rate=min(process_rate, 30))
         self.stream_widget = StreamWidget(self)
+        self.finish_saving = None
         self._init_layout()
 
     @staticmethod
@@ -604,7 +614,7 @@ class StreamProcessingWidget(ProcessingWidget):
             for ch in idxs:
                 process_buffer[ch].append(data[ch][0], data[ch][1])
 
-            params_to_send = {}
+            params_to_send = {ch: None for ch in idxs}
             if process_args_event.is_set():
                 channel_configs = queue_process_args.get(timeout=0.02)
                 process_args_event.clear()
@@ -623,7 +633,7 @@ class StreamProcessingWidget(ProcessingWidget):
                 mask = buf_t > last_t[ch]
                 if not np.any(mask):
                     continue
-                
+
                 t_new = buf_t[mask]
                 d_new = buf_data[0][mask]  # (n_samples,)
 
@@ -633,12 +643,28 @@ class StreamProcessingWidget(ProcessingWidget):
 
                 if config is None:
                     queue_out[ch].put_nowait((d_new, t_new, ch))
+                    StreamProcessingWidget._add_to_save(
+                        queue_save,
+                        t_new[0],
+                        ch,
+                        d_new,
+                        d_new,
+                        params_to_send[ch],
+                    )
                     continue
 
                 window = config.get("process_window", None)
 
                 if window is None or buf_data.shape[-1] < window:
                     queue_out[ch].put_nowait((d_new, t_new, ch))
+                    StreamProcessingWidget._add_to_save(
+                        queue_save,
+                        t_new[0],
+                        ch,
+                        d_new,
+                        d_new,
+                        params_to_send[ch],
+                    )
                     continue
 
                 res = StreamProcessingWidget._process_worker(
@@ -651,14 +677,29 @@ class StreamProcessingWidget(ProcessingWidget):
                 )
 
                 queue_out[ch].put_nowait(res)
-                if queue_save is not None:
-                    data_dict = {'t0': buf_t[-window], 'ch': ch, 'processed': res[0][-len(t_new):], 'raw': buf_data[0, -len(t_new):], 'config': None}
-                    if ch in params_to_send:
-                        data_dict['config'] = params_to_send[ch]
-                    queue_save.put(data_dict)
+                StreamProcessingWidget._add_to_save(
+                    queue_save,
+                    buf_t[-len(t_new)],
+                    ch,
+                    res[0][-len(t_new) :],
+                    buf_data[0, -len(t_new) :],
+                    params_to_send[ch],
+                )
             # if all last t value are superior than the acquisition rate, we set ready
             # if all([t_new[-1] > acquisition_rate for t_new in last_t.values()]):
             #     frame_event.set_ready(process_number)
+        
+    @staticmethod
+    def _add_to_save(queue, t0, ch, processed_data, raw_data, params_to_send):
+        if queue is not None:
+            data_dict = {
+                "t0": t0,
+                "ch": ch,
+                "processed": processed_data,
+                "raw": raw_data,
+                "config": params_to_send,
+            }
+            queue.put_nowait(data_dict)
 
     @staticmethod
     def _process_worker(fct, data, t, process_args, idx, n_new_data):
@@ -687,7 +728,9 @@ class StreamProcessingWidget(ProcessingWidget):
         res = fct(data=data, **process_args)
         return res[0][-n_new_data:], t[-n_new_data:], idx
 
-    def init_stream(self, display_window, queue_process=None, is_running_event=None, channels_mapping=None, save_queue=None):
+    def init_stream(
+        self, display_window, queue_process=None, is_running_event=None, channels_mapping=None, save_queue=None
+    ):
         """
         Initialize the stream widget for processing.
         Parameters:
@@ -731,7 +774,7 @@ class StreamProcessingWidget(ProcessingWidget):
             display_window,
             self.queue_plot,
             self.is_running_event,
-            self.channels_mapping
+            self.channels_mapping,
         )
         self.parent.toolbar.enable_filter_menu()
         self.parent.toolbar.radio_svd_filter_button.setEnabled(False)
@@ -741,6 +784,7 @@ class StreamProcessingWidget(ProcessingWidget):
         if self.stream_widget.save:
             self.save_path = self.stream_widget.save_path
             self.display_options.set_button_on()
+            self.finish_saving = mp.Event()
         else:
             self.save_path = None
         self.start_processing()
@@ -755,7 +799,7 @@ class StreamProcessingWidget(ProcessingWidget):
             p = mp.Process(
                 target=StreamProcessingWidget.process,
                 args=(
-                    i, 
+                    i,
                     self.queue_process[i],
                     queues_tmp,
                     self.process_args_event[i],
@@ -770,13 +814,66 @@ class StreamProcessingWidget(ProcessingWidget):
             )
             self.processes.append(p)
         if self.stream_widget.stream_save is not None:
-            self.processes.append(mp.Process(target=self.stream_widget.stream_save.run, args=(self.queue_save,), daemon=True))
+            self.save_process = (
+                mp.Process(
+                    target=self.stream_widget.stream_save.run,
+                    args=(self.queue_save, self.channels, self.acquisition_rate, self.finish_saving,),
+                    daemon=False,
+                )
+            )
+            self.save_process.start()
         for p in self.processes:
             p.start()
+    
 
     @property
     def acquisition_rate(self):
         return self.stream_widget.acquisition_rate
+
+    def load_config(self, path):
+        """
+        Load a configuration file generated from this app and set the files and parameters accordingly.
+
+        Parameters:
+        -----------
+        """
+        if path == "" or os.path.exists(path) == False:
+            return
+        with open(path, "r") as f:
+            config_data = json.load(f)
+        self.stream_widget.set_value_from_config(config_data)
+
+        
+    def save_config(self, path=None):
+        """
+        Save the configuration file in JSON format.
+
+        Parameters:
+        -----------
+        path: str
+            The path to the configuration file.
+
+        Returns:
+        --------
+        None
+        """
+        if path is None:
+            path = QFileDialog.getSaveFileName(self, "Save configuration file", "", "JSON files (*.json)")[0]
+            if path == "":
+                return
+
+        config = {
+            "mode": "stream",
+            "address": self.stream_widget.address,
+            "port": self.stream_widget.port,
+            "acquisition_rate": self.stream_widget.acquisition_rate,
+            "display_window": self.stream_widget.display_window,
+            "channel_names": self.stream_widget.channels,
+            "save_path": self.stream_widget.save_path,
+            "increment_suffix": self.stream_widget.increment_suffix,
+        }
+        with open(path, "w") as f:
+            json.dump(config, f, indent=4)
 
     @property
     def channels(self):
@@ -789,6 +886,12 @@ class StreamProcessingWidget(ProcessingWidget):
         for p in self.processes:
             p.terminate()
             p.join()
+        if self.finish_saving is not None:
+            self.finish_saving.wait()
+            self.save_process.terminate()
+            self.save_process.join()
+            self.finish_saving = None
+
         self.processing = False
 
     def update_filter(self, name="svd"):
@@ -803,19 +906,14 @@ class StreamProcessingWidget(ProcessingWidget):
         --------
         None
         """
-        # if self.timer.isActive():
-        #     self.stop_processing()
         self.remover_options.update_filter(name)
         self.plot.update_filter(name)
-        # self.plot.update_config_button(self.remover_options.get_current_config())
         processed = self.get_processed_channels()
         if processed is not None:
             self.display_options.display_processed_btn.setEnabled(True)
         else:
             self.display_options.display_processed_btn.setEnabled(False)
         self.remover_options.show_config("")
-        # if self.streaming_data:
-        #     self.start_processing()
 
     def set_paused(self, paused):
         """
@@ -855,11 +953,19 @@ class StreamProcessingWidget(ProcessingWidget):
             return
         if self.stream_widget.save and os.path.exists(self.save_path):
             if self.zarr_ds is None:
-                self.zarr_ds = zarr.open(self.save_path, mode='r')
-            if self.zarr_ds['raw'].shape[1] != self.stream_widget.display_window:
-                self.stream_widget.display_window = self.zarr_ds['raw'].shape[1]
+                self.zarr_ds = zarr.open(self.save_path, mode="r")
+            if self.zarr_ds["raw"].shape[1] != self.stream_widget.display_window:
+                self.stream_widget.display_window = self.zarr_ds["raw"].shape[1]
             self.plot.plot_data(
-                self.zarr_ds['raw'][:, frame_number * self.data_rate:(frame_number * self.data_rate) + self.stream_widget.display_window],
-                self.zarr_ds['processed'][:, frame_number * self.data_rate:(frame_number * self.data_rate) + self.stream_widget.display_window],
-                self.zarr_ds['time'][frame_number * self.data_rate:(frame_number * self.data_rate) + self.stream_widget.display_window],
+                self.zarr_ds["raw"][
+                    :,
+                    frame_number * self.data_rate : (frame_number * self.data_rate) + self.stream_widget.display_window,
+                ],
+                self.zarr_ds["processed"][
+                    :,
+                    frame_number * self.data_rate : (frame_number * self.data_rate) + self.stream_widget.display_window,
+                ],
+                self.zarr_ds["time"][
+                    frame_number * self.data_rate : (frame_number * self.data_rate) + self.stream_widget.display_window
+                ],
             )

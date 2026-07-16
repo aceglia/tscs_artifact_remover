@@ -25,7 +25,7 @@ class LoadDialog:
             if load_method is not None:
                 load_method(self.filename)
         except Exception as e:
-            parent.log_box.log(f"Error occured while loading the file: {e}")
+            parent.log_box.log(f"Error occured while loading the file: {str(repr(e))}")
 
 
 class LoadFolderDialog:

@@ -1,6 +1,4 @@
-import json
 from pathlib import Path
-import time
 
 import numpy as np
 import multiprocessing as mp
@@ -8,30 +6,29 @@ from biosiglive.streaming.utils import CircularBuffer
 
 try:
     import zarr
-    import numcodecs
 except ImportError:
     zarr = None
-    numcodecs = None
-
 
 class ChannelState:
     """
     State of one acquisition channel.
     """
 
-    def __init__(self, channel: int):
+    def __init__(self, channel: int, buf_size: int, dt: float):
         self.channel = channel
-        self.buffer = CircularBuffer(2, 10000)  # buffer for raw data
+        self.buffer = CircularBuffer(2, buf_size)  # buffer for raw data
         self.last_t = -np.inf
         self.pending_config = []
+        self.dt = dt
 
     def append(self, t0, raw, processed, config=None):
         n = len(raw)
-        t = t0 + np.arange(n) * (raw.dtype.type(1) * 0 + 1)  # replaced later
+        t = t0 + (np.arange(n) * self.dt)  # replaced later
         self.buffer.append(x=np.vstack([raw, processed]), t=t)
         self.last_t = t[-1]
         if config is not None:
-            config["t"] = t[0]
+            config["t"] = t0
+            config["channel"] = self.channel
             self.pending_config.append(config)
 
     def get(self):
@@ -43,6 +40,11 @@ class ChannelState:
         self.pending_config = []
         return configs
 
+    def get_t_range(self, t_start, t_stop):
+        data, t = self.buffer.get()
+        mask = (t >= t_start) & (t < t_stop)
+        d, t = data[:, mask], t[mask]
+        return d[0], d[1], t  # raw, processed, t
 
 class StreamSave:
     def __init__(
@@ -51,7 +53,9 @@ class StreamSave:
         use_zarr=False,
         compress=True,
         compression_level=3,
+        # logbox=None
     ):
+        # self.logbox = logbox
         self.last_saved_t = 0
         self.save_path = save_path
         self.use_zarr = use_zarr
@@ -68,37 +72,30 @@ class StreamSave:
         self.channels_name = channel_names if channel_names is not None else [f"ch_{i}" for i in range(n_channels)]
         self.chunk_duration = chunk_duration
         self.chunk_samples = int(round(chunk_duration * data_rate))
-        self.states = {ch: ChannelState(ch) for ch in range(n_channels)}
-        self.buffer_len = self.chunk_samples * 1.2  # some extra time to avoid losing data at the end of the recording
+        self.buffer_len = self.chunk_samples * 2  # some extra time to avoid losing data at the end of the recording
+        self.states = {ch: ChannelState(ch, int(self.buffer_len), self.dt) for ch in range(n_channels)}
 
     def flush_chunk(self, root=None):
         raw = []
         processed = []
         config = []
-        shape = None
+        time = np.arange(self.chunk_samples) * self.dt + self.last_saved_t
         for state in self.states.values():
-            r, p, t = state.get()
-            mask = (t >= self.last_saved_t) & (t < self.last_saved_t + self.chunk_duration)
-            raw.append(r[mask])
-            processed.append(p[mask])
-            if shape is None:
-                shape = r[mask].shape
-            if r[mask].shape != shape:
-                raise ValueError(
-                    f"Shape mismatch: {r[mask].shape} vs {shape}. Maybe try to increase the buffer size or decrease the chunk duration."
-                )
-            state.raw_buffer = [r[~mask]]
-            state.processed_buffer = [p[~mask]]
-            state.time_buffer = [t[~mask]]
-            if state.pending_config:
-                config.extend(state.get_pending_config())
+            r, p, t = state.get_t_range(self.last_saved_t, self.last_saved_t + self.chunk_duration)
+            if time.shape[0] != t.shape[0]:
+                time = t
+            raw.append(r)
+            processed.append(p)
+            config.extend(state.get_pending_config())
+        try:
+            raw = np.vstack(raw)
+            processed = np.vstack(processed)
+        except Exception as e:
+            print(f"Error occurred while stacking data: {str(repr(e))}")
+            return
+        self.append_to_zarr(raw, processed, time, config=config)
 
-        raw = np.vstack(raw)
-        processed = np.vstack(processed)
-
-        self.append_to_zarr(raw, processed, time, config=config, root=root)
-
-    def append_to_zarr(self, raw: np.ndarray, processed: np.ndarray, time: np.ndarray, config=[], root=None) -> None:
+    def append_to_zarr(self, raw: np.ndarray, processed: np.ndarray, time: np.ndarray, config=[]) -> None:
         """
         Append one chunk of data to the Zarr store.
 
@@ -117,11 +114,10 @@ class StreamSave:
 
         self.zarr_recorder.append_signals(raw, processed, time)
 
-        if len(config) > 0:
-            for cfg in config:
-                self.zarr_recorder.save_config(cfg)
+        for cfg in config:
+            self.zarr_recorder.append_config(cfg.pop("channel"), cfg.pop("t"), cfg)
         return self.zarr_recorder.get_size()
-    
+
     def ready_until(self):
         return min(s.last_t for s in self.states.values())
 
@@ -131,7 +127,8 @@ class StreamSave:
         processed = np.asarray(packet["processed"])
         n = len(raw)
         t = packet["t0"] + np.arange(n) * self.dt
-        state.append(t0=packet["t0"], raw=raw, processed=processed, config=packet.get("config", None))
+        config = packet.get("config", None)
+        state.append(t0=packet["t0"], raw=raw, processed=processed, config=config)
         state.last_t = t[-1]
         self.try_flush()
 
@@ -140,16 +137,31 @@ class StreamSave:
             self.flush_chunk()
             self.last_saved_t += self.chunk_duration
 
-    def run(self, queue):
-        self._init_zarr(compress=self.compress, compression_level=self.compression_level) if self.use_zarr else None
+    def run(self, queue, channels, data_rate, finish_saving_event):
+        self.init_stream(n_channels=len(channels), data_rate=data_rate, channel_names=channels)
+        self._init_zarr() if self.use_zarr else None
         while True:
             try:
-                packet = queue.get(timeout=0.01)
+                packet = queue.get(timeout=0.1)
                 self.add_packet(packet)
             except Exception as e:
-                pass
+                if not isinstance(e, mp.queues.Empty):
+                    print(f"save_utils: error while saving", str(repr(e)))
+                    break
+                elif self.ready_until() - self.last_saved_t > 0:
+                    self.flush_remaining()
+                    break
+        finish_saving_event.set()
 
-    def _init_zarr(self, compress=True, compression_level=3):
+    def flush_remaining(self):
+        """
+        Flush the remaining data in the buffer to the Zarr store.
+        """
+        while self.ready_until() - self.last_saved_t > 0:
+            self.flush_chunk()
+            self.last_saved_t += self.chunk_duration
+
+    def _init_zarr(self):
         """
         Initialize the Zarr store.
 
@@ -175,15 +187,7 @@ class StreamSave:
             chunk_seconds=self.chunk_duration,
         )
         return self.zarr_recorder.root
-
-    # def run_save(self, queue) -> None:
-    #     """
-    #     Launch the saving process. This function will start a separate process that will handle the saving of the data.
-    #     """
-    #     self.process = mp.Process(
-    #         target=self.run, args=(queue, self.circular_buffers, self.use_zarr), daemon=True
-    #     )
-    #     self.process.start()
+    
 
 class ZarrRecording:
     def __init__(
@@ -254,7 +258,7 @@ class ZarrRecording:
         # ==============================================================
         root.create_group("configs")
         for ch in range(self.n_channels):
-            root["configs"].create_group(f"channel_{ch:03d}")
+            root["configs"].create_group(f"channel_{ch:02d}")
 
         return root
 
@@ -289,22 +293,17 @@ class ZarrRecording:
                 self.append_config(ch, timestamp, parameters)
             return
 
-        channel_group = self.root["configs"][f"channel_{channel:03d}"]
+        channel_group = self.root["configs"][f"channel_{channel:02d}"]
 
         cfg_id = len(channel_group)
 
-        cfg = channel_group.create_group(f"{cfg_id:06d}")
+        cfg = channel_group.create_group(f"{cfg_id}")
 
         cfg.attrs["timestamp"] = float(timestamp)
 
         for key, value in parameters.items():
-
             if isinstance(value, np.ndarray):
                 cfg.create_array(key, data=value)
-
-            elif isinstance(value, (list, tuple)):
-                cfg.create_array(key, data=np.asarray(value))
-
             else:
                 cfg.attrs[key] = value
 

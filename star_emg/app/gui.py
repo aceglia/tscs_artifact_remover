@@ -1,3 +1,5 @@
+from ast import Return
+import json
 import os
 from pathlib import Path
 from PyQt5.QtWidgets import (
@@ -42,12 +44,15 @@ class CustomToolBar:
         self.load_config_button = self.file_menu.addAction("Load config")
         self.load_config_button.triggered.connect(self.parent._load_config)
         self.load_config_button.setEnabled(True)
-        self.save_config_button = self.file_menu.addAction("Save")
-        self.save_config_button.triggered.connect(self.parent.save)
+        self.save_config_button = self.file_menu.addAction("Save config")
         self.save_config_button.setEnabled(False)
-        self.save_as_config_button = self.file_menu.addAction("Save As")
-        self.save_as_config_button.triggered.connect(self.parent.save_as)
-        self.save_as_config_button.setEnabled(False)
+        self.save_config_button.triggered.connect(self.parent._save_config)
+        self.save_button = self.file_menu.addAction("Save")
+        self.save_button.triggered.connect(self.parent.save)
+        self.save_button.setEnabled(False)
+        self.save_as_button = self.file_menu.addAction("Save As")
+        self.save_as_button.triggered.connect(self.parent.save_as)
+        self.save_as_button.setEnabled(False)
         self.quit_button = self.file_menu.addAction("Quit")
         self.quit_button.triggered.connect(self.parent.quit)
 
@@ -89,6 +94,11 @@ class CustomToolBar:
         """
         self.filter_menu.setEnabled(True)
 
+    def adjust_for_mode(self, offline=True):
+        """
+        This method adjusts the toolbar for stream mode. It disables the file menu and enables the appropriate buttons for stream mode.
+        """
+        self.load_files_button.setEnabled(offline)
 
 class GUI(QMainWindow):
     """
@@ -117,6 +127,8 @@ class GUI(QMainWindow):
         self._split = False
         self.save_as_popup = None
         self.default_save_name = None
+        self.mode = 'offline'
+        self.default_base_name = None
 
     def _init_layout(self):
         """
@@ -146,8 +158,10 @@ class GUI(QMainWindow):
         """
         self.toolbar.go_offline_button.setEnabled(True)
         self.toolbar.go_stream_button.setEnabled(False)
-        # replace processing widget by stream widget
+        self.toolbar.adjust_for_mode(False)
         self.stack.setCurrentWidget(self.stream_processing_widget)
+        self.toolbar.save_config_button.setEnabled(True)
+        self.mode = 'stream'
 
     def go_offline_mode(self):
         """
@@ -155,7 +169,12 @@ class GUI(QMainWindow):
         """
         self.toolbar.go_offline_button.setEnabled(False)
         self.toolbar.go_stream_button.setEnabled(True)
+        self.toolbar.adjust_for_mode(True)
         self.stack.setCurrentWidget(self.processing_widget)
+        self.mode = 'offline'
+        if self.processing_widget.file_path is None:
+            self.toolbar.save_config_button.setEnabled(False)
+
 
     def notch_selected(self):
         """
@@ -203,7 +222,6 @@ class GUI(QMainWindow):
         self.default_save_name = os.path.join(str(path_tmp.parent), path_tmp.stem + '_processed' + path_tmp.suffix)
         self.default_extension = path_tmp.suffix
         self.toolbar.save_config_button.setEnabled(True)
-        self.toolbar.save_as_config_button.setEnabled(True)
 
     def _save_file(self):
         """
@@ -211,6 +229,20 @@ class GUI(QMainWindow):
         """
         self.log_box.log(f"Saving file at: {self.default_save_name}")
         self.processing_widget.save_file(self.default_save_name, self.default_extension)
+
+    def _check_config(self, path):
+        """
+        Check if the configuration is stream or offline.
+        """
+        with open(path, "r") as f:
+            config = json.load(f)
+        if config["mode"] == "stream":
+            self.go_stream_mode()
+        elif config["mode"] == "offline":
+            self.go_offline_mode()
+        else:
+            raise ValueError("Invalid mode in configuration file. Must be 'stream' or 'offline'.")
+        self.stack.currentWidget().load_config(path)
 
     def _load_config(self):
         """
@@ -226,8 +258,11 @@ class GUI(QMainWindow):
             parent=self,
             caption="Load configuration file",
             filter="File type (*.json)",
-            load_method=self.processing_widget.load_config,
+            load_method=self._check_config,
         )
+        if self.stack.currentWidget() == self.stream_processing_widget:
+            return
+        
         if dialog.filename == "":
             return
         if self.processing_widget.canceled:
@@ -242,9 +277,11 @@ class GUI(QMainWindow):
         """
         Run the processing widget's save_config method to save the current configuration. The configuration is saved with a name based on the default save name, with "_configuration.json" appended to it. It also logs the save action in the log box.
         """
-        file_path = self.default_base_name + "_configuration.json"
-        self.log_box.log(f"Saving configuration file at: {file_path}")
-        self.processing_widget.save_config(file_path)
+        if self.default_base_name is not None:
+            file_path = self.default_base_name + "_configuration.json"
+        else:
+            file_path = None
+        self.stack.currentWidget().save_config(file_path)
 
     def quit(self):
         """
@@ -325,7 +362,7 @@ class GUI(QMainWindow):
             self._save_file()
             self._save_config()
         except Exception as e:
-            self.log_box.log("Error occured while saving the files: ", e)
+            self.log_box.log("Error occured while saving the files: ", str(repr(e)))
 
     def set_saved_ok(self, saved_ok):
         """
