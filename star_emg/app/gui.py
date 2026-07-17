@@ -1,4 +1,4 @@
-from ast import Return
+import shutil
 import json
 import os
 from pathlib import Path
@@ -123,6 +123,8 @@ class GUI(QMainWindow):
         # self.addToolBar(self.toolbar)
         self._init_layout()
         self.show()
+        self._tmp_file_path = r".tmp_stream/recording.zarr"
+        self._check_for_unsaved_work()
         self.saved_ok = True
         self._split = False
         self.save_as_popup = None
@@ -151,6 +153,29 @@ class GUI(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setAlignment(Qt.AlignTop)
         self.central_widget.setLayout(main_layout)
+
+    def _check_for_unsaved_work(self):
+        if os.path.exists(self._tmp_file_path):
+            popup_warning_save(
+                "Something went wrong. You have unsaved stream session. Do you want to save the work? ", "Warning", self.popup_stream_unsaved
+            )
+            if self._delete_tmp:
+                self.log_box.log("Unsaved work was not saved. It will be deleted.")
+                # get the directory of the tmp file path
+                tmp_dir = os.path.dirname(self._tmp_file_path)
+                shutil.rmtree(tmp_dir)
+
+    def popup_stream_unsaved(self, button):
+        """
+        Options for the popup warning when the user has unsaved work and tries to quit the application. If the user clicks "Save", it saves the current file and configuration, sets the _quit attribute to True, and allows the application to quit. If the user clicks "Ignore", it sets the _quit attribute to True, allowing the application to quit without saving. If the user clicks "Cancel", it sets the _quit attribute to False, preventing the application from quitting.
+        """
+        self._delete_tmp = True
+        if button.text() == "Save":
+            success = self.stream_processing_widget.save_zarrds(self._tmp_file_path)
+            if not success:
+                self._check_for_unsaved_work()
+        elif button.text() == "Cancel":
+            self._delete_tmp = False
 
     def go_stream_mode(self):
         """
@@ -373,3 +398,11 @@ class GUI(QMainWindow):
             self.toolbar.save_config_button.setEnabled(False)
         else:
             self.toolbar.save_config_button.setEnabled(True)
+
+    def closeEvent(self, event):
+        """Intercept the close action to run custom code."""
+        self.quit()
+        if self._quit:
+            event.accept()  # Accept the close event and close the window
+        else:
+            event.ignore()  # Ignore the close event and keep the window open

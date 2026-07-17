@@ -307,22 +307,20 @@ class SaveStreamPopup(QDialog):
     def save_path(self):
         if self.save_folder is None or self.save_name is None:
             return None
-        
         path = os.path.join(self.save_folder, self.save_name)
         base, ext = os.path.splitext(path)
         if ext == "" and self.use_zarr:
             ext = ".stream"
             path += ext
 
+        if self.increment_suffix_checkbox.isChecked():
+            if not base[-3:].isdigit():
+                path = f"{base}001{ext}"
         if os.path.exists(path):
             if self.increment_suffix_checkbox.isChecked():
                 return self.increment_suffix(path)
             else:
                 return path
-        elif self.increment_suffix_checkbox.isChecked():
-            if not base[-3:].isdigit():
-                path = f"{base}001{ext}"
-            return path
         return path
 
     def _browse_save_folder(self):

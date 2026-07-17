@@ -67,7 +67,7 @@ class ChannelPlot:
         # self.plot_item.setXRange(self.time[0], self.time[-1], padding=0)
         self.plot_item.setClipToView(True)
         self.plot_item.setDownsampling(auto=True, mode="peak")
-        self.plot_item.setLabel("left", self.name, units="µV")
+        self.plot_item.setLabel("left", self.name, units="V")
         self.plot_item.getAxis("left").enableAutoSIPrefix(False)
         self.plot_item.showGrid(x=True, y=True, alpha=0.2)
         self.show_config_btn = QPushButton("i")
@@ -171,13 +171,15 @@ class ChannelPlot:
             x = self.time
 
         if auto_range:
-            start = x[0][0] if len(x) == 2 else x[0]
-            stop = x[0][-1] if len(x) == 2 else x[0]
-            self.plot_item.setXRange(start, stop, padding=0)
+            try:
+                start = x[0][0] if len(x) == 2 else x[0]
+                stop = x[0][-1] if len(x) == 2 else x[0]
+            except Exception as e:
+                print("Error while updating the plot. The data might be empty.", repr(e))
+            # self.plot_item.setXRange(start, stop, padding=0)
             self.view.setLimits(xMin=start, xMax=stop)
-
+        auto_range = False
         self.view.enableAutoRange(x=auto_range, y=auto_range)
-
         if data_type == "raw" or data_type == "both":
             self.curves[0].setData(x=x[0], y=y[0], pen=self.pen_raw)
         if data_type == "clean" or data_type == "both":
@@ -333,7 +335,7 @@ class Plotter(pg.GraphicsLayoutWidget):
     @property
     def channel_idxs(self):
         return [chan[0] for chan in self.channels]
-    
+
     @property
     def visible_channel_names(self):
         if self.visible_channels is None:
@@ -345,6 +347,7 @@ class Plotter(pg.GraphicsLayoutWidget):
         if self.visible_channels is None:
             return []
         return [chan[0] for chan in self.visible_channels]
+
 
 class OfflinePlotter(Plotter):
     """
@@ -578,19 +581,29 @@ class StreamPlotter(Plotter):
         visible_idx = self.visible_channel_idxs
         raw, t_raw = self.get_raw()
         process_data = self.get_data_from_queue(visible_idx, self.queue_plot)
-        # if self.paused or not self.parent.display_options.is_sampling_frame:
-        #     # flush data before pause in the queue to avoid delays when resuming
-        #     return
-        raw, t_raw = self.adjust_to_wind((raw, t_raw), type="raw")
 
-        process_data = self.adjust_to_wind(process_data, type="clean", t_raw=t_raw)
-        self.setUpdatesEnabled(False)
         for plot in self.plot_list:
             if plot.idx in visible_idx and plot.visible is False:
                 plot.set_visible(True)
             if plot.idx not in visible_idx and plot.visible is True:
                 plot.set_visible(False)
 
+        if self.paused:
+            return
+
+        if not self.parent.display_options.is_sampling_frame:
+            block_idx = int(t_raw[-1].item() // self.display_window_sec)
+            if self._current_block != block_idx:
+                self.parent.update_streaming_frame(block_idx)
+            return
+        
+        if self.parent.filter_disabled:
+            self.parent.remover_options.enable(all=True)
+            self.parent.parent.toolbar.filter_menu.setEnabled(True)
+            self.parent.filter_disabled = False
+        raw, t_raw = self.adjust_to_wind((raw, t_raw), type="raw")
+        process_data = self.adjust_to_wind(process_data, type="clean", t_raw=t_raw)
+        self.setUpdatesEnabled(False)
         [
             plot.update_plot(
                 [raw[plot.idx], process_data[plot.idx][0][0]],
@@ -620,7 +633,8 @@ class StreamPlotter(Plotter):
         data: dict
             A dictionary containing the processed data for the specified visible channels. The keys are the channel indices, and the values are tuples containing the processed data and the corresponding time.
         """
-        for i in visible_channels:
+        # for i in visible_channels:
+        for i in range(len(queues)):
             dic_tmp = queues[i].get_stacked()
             if dic_tmp is not None:
                 self.append_clean(dic_tmp[i][0], dic_tmp[i][1], i)
@@ -660,6 +674,7 @@ class StreamPlotter(Plotter):
                         if (self.plot_list[i].visible or i == 0)
                     ]
                     self._current_block = block_idx
+                    self.parent.update_streaming_frame(block_idx)
 
         if type == "raw":
             t_start_idx = np.searchsorted(t, self.current_start_time)
@@ -738,7 +753,7 @@ class StreamPlotter(Plotter):
 
     def get_raw(self):
         return self.raw_data.get()
-    
+
     def get_clean(self, idx):
         return (
             self.processed_notch_buffer[idx].get()
@@ -793,20 +808,14 @@ class StreamPlotter(Plotter):
         self.paused = pause
 
     def plot_data(self, raw, process_data, time):
-        visible_idx = self.visible_channel_idxs
-        for plot in self.plot_list:
-            if plot.idx in visible_idx and plot.visible is False:
-                plot.set_visible(True)
-            if plot.idx not in visible_idx and plot.visible is True:
-                plot.set_visible(False)
-
         [
             plot.update_plot(
                 [raw[plot.idx], process_data[plot.idx]],
-                'both',
+                "both",
                 True,
                 time=[time, time],
             )
             for plot in self.plot_list
-            if plot.idx in visible_idx
+            if plot.visible is True
         ]
+        

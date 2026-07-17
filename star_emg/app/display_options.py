@@ -19,7 +19,6 @@ class DisplayWidget(QWidget):
         self.channels = []
         self.channel_selecter = None
         self.file_list = []
-        self.n_frames = 0
         self.channels_to_draw = []
         self.draw_raw = True
         self.draw_clean = True
@@ -181,11 +180,13 @@ class StreamDisplayWidget(DisplayWidget):
     Widget to chose the display options for the plot in online processing.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, enable=True):
         super().__init__(parent)
-        self.current_frame = -1
-        self.n_frames = 0
+        self.current_frame = 0
+        self.frame_list = []
         self._init_layout()
+        if enable is False:
+            self.disable()
 
     def _init_layout(self):
         layout = QGridLayout()
@@ -200,14 +201,14 @@ class StreamDisplayWidget(DisplayWidget):
         self.prev_frame.setEnabled(False)
         self.next_frame = QPushButton("Next")
         self.next_frame.setEnabled(False)
-        self.sampling_frame = QPushButton("Sampling frame")
+        self.sampling_frame = QPushButton("Current")
         self.sampling_frame.setEnabled(False)
         self.prev_frame.clicked.connect(self.on_prev_frame_clicked)
         self.next_frame.clicked.connect(self.on_next_frame_clicked)
         self.sampling_frame.clicked.connect(self.on_sampling_frame_clicked)
         self.input_frame = QLineEdit()
         self.input_frame.setText("1")
-        self.input_frame.textChanged.connect(self.on_frame_changed)
+        self.input_frame.textEdited.connect(self.on_frame_changed)
 
         self.display_all_btn = QPushButton("Show all")
         self.display_all_btn.clicked.connect(self.on_display_all)
@@ -221,15 +222,20 @@ class StreamDisplayWidget(DisplayWidget):
         self.show_fft_button.stateChanged.connect(self.on_draw_fft_clicked)
         self.cursor_pos = QLabel("Cursor position: x= ,y= ")
 
-        layout.addWidget(QLabel("<b><font size=5>Display options</font></b>"), 0, 0, 1, 4, Qt.AlignCenter)
+        layout.addWidget(QLabel("<b><font size=5>Display options</font></b>"), 0, 0, 1, 5, Qt.AlignCenter)
 
         layout.addWidget(self.display_processed_btn, 1, 3, 1, 1)
         layout.addWidget(self.display_all_btn, 1, 2, 1, 1)
         layout.addWidget(self.popup_button, 1, 0, 1, 2)
-        layout.addWidget(self.draw_raw_button, 2, 0, 1, 1)
-        layout.addWidget(self.draw_clean_button, 2, 1, 1, 1)
+        layout.addWidget(QLabel("Frame:"), 2, 0, 1, 1)
+        layout.addWidget(self.prev_frame, 2, 1, 1, 1)
+        layout.addWidget(self.next_frame, 2, 2, 1, 1)
+        layout.addWidget(self.sampling_frame, 2, 3, 1, 1)
+        layout.addWidget(self.input_frame, 2, 4, 1, 1)
+        layout.addWidget(self.draw_raw_button, 3, 0, 1, 1)
+        layout.addWidget(self.draw_clean_button, 3, 1, 1, 1)
         # layout.addWidget(self.show_fft_button, 2, 2, 1, 1)
-        layout.addWidget(self.cursor_pos, 3, 0, 1, 4)
+        layout.addWidget(self.cursor_pos, 4, 0, 1, 5)
         self.setLayout(layout)
 
     def on_prev_frame_clicked(self):
@@ -237,12 +243,13 @@ class StreamDisplayWidget(DisplayWidget):
         self.on_frame_changed()
     
     def on_next_frame_clicked(self):
+        if self.is_sampling_frame:
+            return
         self._update_frame_number("next")
         self.on_frame_changed()
 
     def on_sampling_frame_clicked(self):
         self._update_frame_number("sampling")
-        self.on_frame_changed()
 
     def set_button_on(self):
         self.prev_frame.setEnabled(True)
@@ -263,10 +270,10 @@ class StreamDisplayWidget(DisplayWidget):
         elif direction == "next":
             self.current_frame += 1
         elif direction == "sampling":
-            self.current_frame = self.n_frames - 1
+            self.current_frame = self.n_frames
         elif value is not None:
             self.current_frame = int(value) - 1
-        self.current_frame = min(self.current_frame, self.n_frames - 1)
+        self.current_frame = min(self.current_frame, self.n_frames)
         self.current_frame = max(self.current_frame, 0)
         return self.current_frame
 
@@ -278,12 +285,17 @@ class StreamDisplayWidget(DisplayWidget):
 
     def _reset(self):
         self.current_frame = 0
-        self.n_frames = 0
         self.input_frame.setText("1")
         self.draw_raw_button.setChecked(True)
         self.draw_clean_button.setChecked(True)
         self.show_fft_button.setChecked(False)
         self.update_draw_params()
+
+    def append_frame_number(self, frame_number):
+        if self.is_sampling_frame:
+            self.current_frame = frame_number
+            self.input_frame.setText(str(frame_number + 1))
+        self.frame_list.append(frame_number)
 
     def on_draw_clicked(self):
         self.channels_to_draw = self.channel_selecter.get_selected_channels()
@@ -291,4 +303,10 @@ class StreamDisplayWidget(DisplayWidget):
 
     @property
     def is_sampling_frame(self):
-        return self.current_frame == self.n_frames - 1
+        return self.current_frame == self.n_frames
+    
+    @property
+    def n_frames(self):
+        if self.frame_list == []:
+            return 0
+        return max(self.frame_list)

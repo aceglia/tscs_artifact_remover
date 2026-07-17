@@ -1,8 +1,8 @@
-from calendar import c
 from functools import partial
 import json
 import os
 import time
+import zarr
 
 from PyQt5.QtWidgets import QWidget, QSplitter, QVBoxLayout, QFileDialog
 from PyQt5.QtCore import Qt, QThreadPool, QTimer
@@ -24,7 +24,9 @@ from ..io_utils import export_csv, write_txt_file
 from ..processing_utils import Quality
 from ..solution import Solution
 from .stream_widget import StreamWidget
+from .save_utils import StreamSave
 from .popup_utils import FilterDialog
+
 
 
 class ProcessingWidget(QWidget):
@@ -547,10 +549,11 @@ class StreamProcessingWidget(ProcessingWidget):
         self.channels_mapping = None
         self.n_process = mp.cpu_count() - 4 if mp.cpu_count() > 2 else 1
         self.remover_options = StreamRemover(self)
-        self.display_options = StreamDisplayWidget(self)
+        self.display_options = StreamDisplayWidget(self, enable=False)
         self.plot = StreamPlotter(self, rate=min(process_rate, 30))
         self.stream_widget = StreamWidget(self)
         self.finish_saving = None
+        self.filter_disabled = False
         self._init_layout()
 
     @staticmethod
@@ -764,6 +767,7 @@ class StreamProcessingWidget(ProcessingWidget):
         self.parent.log_box.log(f"Starting stream with {self.n_process} processes...")
         self.fft_freqs = rfftfreq(display_window, 1 / self.acquisition_rate)
         # self.frame_event = SharedEvent(n_process = len(self.queue_process))
+        self.display_options.enable()
         self.display_options.set_file_params(self.channels)
         self.remover_options.new_stream(self.channels, self.process_args_event, self.queue_process_args)
         self.plot.initialize_data(
@@ -780,10 +784,10 @@ class StreamProcessingWidget(ProcessingWidget):
         self.parent.toolbar.radio_notch_filter_button.setEnabled(True)
         self.update_filter("svd")
         self.running = True
+        self.display_options.set_button_on()
+        self.finish_saving = mp.Event()
         if self.stream_widget.save:
             self.save_path = self.stream_widget.save_path
-            self.display_options.set_button_on()
-            self.finish_saving = mp.Event()
         else:
             self.save_path = None
         self.start_processing()
@@ -812,18 +816,19 @@ class StreamProcessingWidget(ProcessingWidget):
                 daemon=True,
             )
             self.processes.append(p)
-        if self.stream_widget.stream_save is not None:
-            self.save_process = mp.Process(
-                target=self.stream_widget.stream_save.run,
-                args=(
-                    self.queue_save,
-                    self.channels,
-                    self.acquisition_rate,
-                    self.finish_saving,
-                ),
-                daemon=False,
-            )
-            self.save_process.start()
+            
+        self.save_process = mp.Process(
+            target=self.stream_widget.stream_save.run,
+            args=(
+                self.queue_save,
+                self.channels,
+                self.acquisition_rate,
+                self.finish_saving,
+            ),
+            daemon=False,
+        )
+
+        self.save_process.start()
         for p in self.processes:
             p.start()
 
@@ -891,7 +896,6 @@ class StreamProcessingWidget(ProcessingWidget):
             self.save_process.terminate()
             self.save_process.join()
             self.finish_saving = None
-
         self.processing = False
 
     def update_filter(self, name="svd"):
@@ -949,23 +953,58 @@ class StreamProcessingWidget(ProcessingWidget):
         --------
         None
         """
-        if self.display_options.is_sampling_frame:
-            return
-        if self.stream_widget.save and os.path.exists(self.save_path):
+        if os.path.exists(self.stream_widget.stream_save.save_path):
             if self.zarr_ds is None:
-                self.zarr_ds = zarr.open(self.save_path, mode="r")
-            if self.zarr_ds["raw"].shape[1] != self.stream_widget.display_window:
-                self.stream_widget.display_window = self.zarr_ds["raw"].shape[1]
-            self.plot.plot_data(
-                self.zarr_ds["raw"][
-                    :,
-                    frame_number * self.data_rate : (frame_number * self.data_rate) + self.stream_widget.display_window,
-                ],
-                self.zarr_ds["processed"][
-                    :,
-                    frame_number * self.data_rate : (frame_number * self.data_rate) + self.stream_widget.display_window,
-                ],
-                self.zarr_ds["time"][
-                    frame_number * self.data_rate : (frame_number * self.data_rate) + self.stream_widget.display_window
-                ],
+                try:
+                    self.zarr_ds = zarr.open(self.stream_widget.stream_save.save_path, mode="r")
+                except Exception as e:
+                    self.parent.log_box.log(f"Error while loading the data set: {repr(e)}")
+                    return
+                
+            if not self.filter_disabled:
+                self.remover_options.disable()
+                self.parent.toolbar.filter_menu.setEnabled(False)
+                self.filter_disabled = True
+            slice_tmp = slice(
+                int(frame_number * self.stream_widget.display_window),
+                int(frame_number * self.stream_widget.display_window) + self.stream_widget.display_window,
             )
+            print("processing_widget - update_frame", slice_tmp)
+            self.plot.plot_data(
+                self.zarr_ds["signals"]["raw"][:, slice_tmp], self.zarr_ds["signals"]["processed"][:, slice_tmp], self.zarr_ds["signals"]["time"][slice_tmp]
+            )
+
+    def update_streaming_frame(self, frame_number):
+        """
+        Update the epochs number and update the plot.
+        Parameters:
+        -----------
+        frame_number: int
+            The frame number to update the plot with.
+
+        Returns:
+        --------
+        None
+        """
+        self.display_options.append_frame_number(frame_number)
+
+    def save_zarrds(self, path, save_path=None):
+        """
+        Save the data to a Zarr dataset.
+        Parameters:
+        -----------
+        """
+        if save_path is None:
+            save_path = QFileDialog.getSaveFileName(self, "Save stream session", "", "BioSigLive File (*.bio)")[0]
+            if save_path == "":
+                return False
+        try:
+            if self.stream_widget is None: 
+                save_stream = StreamSave(self.stream_widget._tmp_path, save_path)
+            else:
+                save_stream = self.stream_widget.stream_save
+            save_stream.convert_to_file(save_path, zarr_ds_path=path)
+            self.parent.log_box.log(f"Data saved to {save_path}")
+        except Exception as e:
+            self.parent.log_box.log(f"Error while saving data: {repr(e)}")
+            return True

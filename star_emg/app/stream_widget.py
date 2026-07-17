@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import threading
 
@@ -107,14 +108,16 @@ class StreamWidget(QWidget):
         """
         Start the stream.
         """
+        self.parent.parent._check_for_unsaved_work()
         self.parent.parent.toolbar.save_button.setEnabled(False)
         self.parent.parent.toolbar.save_as_button.setEnabled(False)
-        if self.save_popup is not None:
-            self._get_save_options()
-            self.stream_save = StreamSave(save_path=self.save_path, use_zarr=self.use_zarr, compress=self.compress, compression_level=self.compression_level)
-            save_queue = CustomQueue(name='save_queue')
         self._change_widget_state(not_playing=False)
         if not self.paused:
+            if self.save_popup is not None:
+                self._get_save_options()
+            self.stream_save = StreamSave(use_zarr=self.use_zarr, compress=self.compress, compression_level=self.compression_level)
+            save_queue = CustomQueue(name='save_queue')
+            # self.parent.parent.log_box.log(f"Saving stream to: {self._tmp_path}")
             self.parent.parent.log_box.log(
                 f"Launching the stream at: {self.address}:{self.port} waiting for a client..."
             )
@@ -133,7 +136,7 @@ class StreamWidget(QWidget):
                 queue_process=self.queue_process,
                 is_running_event=self.is_running_event,
                 channels_mapping=self.channels_mapping,
-                save_queue=save_queue if self.save else None,
+                save_queue=save_queue,
             )
         else:
             self.parent.set_paused(False)
@@ -233,6 +236,7 @@ class StreamWidget(QWidget):
         self.pause_button.setEnabled(not not_playing)
         self.play_button.setEnabled(not_playing)
         self.save_popup_button.setEnabled(not_playing)
+        self.parent.display_options.sampling_frame.setEnabled(not not_playing)
 
     def set_value_from_config(self, config):
         """
@@ -241,7 +245,7 @@ class StreamWidget(QWidget):
         self.adress_in.setText(config["address"])
         self.port_in.setText(str(config["port"]))
         self.ac_rate_in.setText(str(config["acquisition_rate"]))
-        self.display_wind_in.setText(str(config["display_window"] / config["acquisition_rate"]).format("%0.2f"))
+        self.display_wind_in.setText(str(np.round(config["display_window"] / config["acquisition_rate"], decimals=2)))
         if len(config["channel_names"]) > 0:
             self.channels = config["channel_names"]
             self._set_channels(skip_dialog=True)
