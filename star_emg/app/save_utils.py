@@ -11,6 +11,7 @@ try:
 except ImportError:
     zarr = None
 
+
 class ChannelState:
     """
     State of one acquisition channel.
@@ -48,6 +49,7 @@ class ChannelState:
         d, t = data[:, mask], t[mask]
         return d[0], d[1], t  # raw, processed, t
 
+
 class StreamSave:
     def __init__(
         self,
@@ -73,10 +75,9 @@ class StreamSave:
         os.system(f'attrib +h "{self._tmp_folder}"')
         self.zarr_recorder = None
 
-
     def init_stream(self, n_channels, data_rate, channel_names=None, chunk_duration=5.0):
         if self._save_ok is False:
-            pass # add a popup windows
+            pass  # add a popup windows
         self._save_ok = False
         self.n_chanels = n_channels
         self.data_rate = data_rate
@@ -201,7 +202,7 @@ class StreamSave:
             chunk_seconds=self.chunk_duration,
         )
         return self.zarr_recorder.root
-    
+
     def convert_to_file(self, output_path, zarr_ds_path=None):
         """
         Convert the Zarr dataset to a single file (e.g., .npz or .h5).
@@ -213,10 +214,10 @@ class StreamSave:
         """
         if output_path is None and self.save_path is None:
             raise ValueError("Output path is not specified.")
-        
+
         if self.zarr_recorder is None and zarr_ds_path is None:
             raise ValueError("Zarr recorder is not initialized.")
-    
+
         if zarr_ds_path is not None:
             zarr_ds = ZarrRecording.load_dataset(zarr_ds_path)
         else:
@@ -231,7 +232,7 @@ class StreamSave:
         # remove the temporary Zarr dataset
         # if self._tmp_path.exists():
         #     shutil.rmtree(self._tmp_folder)
-            
+
 
 class ZarrRecording:
     def __init__(
@@ -500,7 +501,7 @@ class ZarrRecording:
         path : str
             Path to the recording dataset.
         """
-            
+
         root = zarr.open(path, mode="r")
         return cls(
             path=path,

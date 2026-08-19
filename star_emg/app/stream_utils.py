@@ -167,7 +167,6 @@ class SharedEvent:
         with self.lock:
             self.ready[idx] = False
             self.all_ready.clear()
-        
 
     def wait(self):
         self.all_ready.wait()

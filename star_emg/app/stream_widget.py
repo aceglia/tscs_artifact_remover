@@ -115,8 +115,10 @@ class StreamWidget(QWidget):
         if not self.paused:
             if self.save_popup is not None:
                 self._get_save_options()
-            self.stream_save = StreamSave(use_zarr=self.use_zarr, compress=self.compress, compression_level=self.compression_level)
-            save_queue = CustomQueue(name='save_queue')
+            self.stream_save = StreamSave(
+                use_zarr=self.use_zarr, compress=self.compress, compression_level=self.compression_level
+            )
+            save_queue = CustomQueue(name="save_queue")
             # self.parent.parent.log_box.log(f"Saving stream to: {self._tmp_path}")
             self.parent.parent.log_box.log(
                 f"Launching the stream at: {self.address}:{self.port} waiting for a client..."
@@ -167,7 +169,7 @@ class StreamWidget(QWidget):
 
         if self.save_popup.exec_() == QDialog.Accepted:
             self._get_save_options()
-            
+
     def _get_save_options(self):
         self.save_path = self.save_popup.save_path
         self.use_zarr = self.save_popup.use_zarr
@@ -224,7 +226,7 @@ class StreamWidget(QWidget):
             return self.server.buffer.get()
         else:
             return None
-    
+
     def _change_widget_state(self, not_playing: bool):
         self.adress_in.setEnabled(not_playing)
         self.port_in.setEnabled(not_playing)
@@ -250,9 +252,9 @@ class StreamWidget(QWidget):
             self.channels = config["channel_names"]
             self._set_channels(skip_dialog=True)
 
-        if config['save_path'] is not None:
+        if config["save_path"] is not None:
             self.save_popup = SaveStreamPopup()
-            save_path = Path(config['save_path'])
+            save_path = Path(config["save_path"])
             save_directory = save_path.parent
             save_filename = save_path.name
             self.save_popup.save_fold_input.setText(str(save_directory))

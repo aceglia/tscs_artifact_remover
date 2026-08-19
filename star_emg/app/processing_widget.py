@@ -28,7 +28,6 @@ from .save_utils import StreamSave
 from .popup_utils import FilterDialog
 
 
-
 class ProcessingWidget(QWidget):
     """
     Parent class for the processing widget, which will be used for both offline and online processing.
@@ -816,7 +815,7 @@ class StreamProcessingWidget(ProcessingWidget):
                 daemon=True,
             )
             self.processes.append(p)
-            
+
         self.save_process = mp.Process(
             target=self.stream_widget.stream_save.run,
             args=(
@@ -960,7 +959,7 @@ class StreamProcessingWidget(ProcessingWidget):
                 except Exception as e:
                     self.parent.log_box.log(f"Error while loading the data set: {repr(e)}")
                     return
-                
+
             if not self.filter_disabled:
                 self.remover_options.disable()
                 self.parent.toolbar.filter_menu.setEnabled(False)
@@ -971,7 +970,9 @@ class StreamProcessingWidget(ProcessingWidget):
             )
             print("processing_widget - update_frame", slice_tmp)
             self.plot.plot_data(
-                self.zarr_ds["signals"]["raw"][:, slice_tmp], self.zarr_ds["signals"]["processed"][:, slice_tmp], self.zarr_ds["signals"]["time"][slice_tmp]
+                self.zarr_ds["signals"]["raw"][:, slice_tmp],
+                self.zarr_ds["signals"]["processed"][:, slice_tmp],
+                self.zarr_ds["signals"]["time"][slice_tmp],
             )
 
     def update_streaming_frame(self, frame_number):
@@ -999,7 +1000,7 @@ class StreamProcessingWidget(ProcessingWidget):
             if save_path == "":
                 return False
         try:
-            if self.stream_widget is None: 
+            if self.stream_widget is None:
                 save_stream = StreamSave(self.stream_widget._tmp_path, save_path)
             else:
                 save_stream = self.stream_widget.stream_save

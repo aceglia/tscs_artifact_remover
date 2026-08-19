@@ -100,6 +100,7 @@ class CustomToolBar:
         """
         self.load_files_button.setEnabled(offline)
 
+
 class GUI(QMainWindow):
     """
     This class creates the main GUI for the StAR-EMG application. It contains a log box to display messages to the user, a processing widget to handle the file processing, and a custom toolbar for file and filter actions. The GUI also manages the state of the application, such as whether the current work is saved or not, and handles user interactions through various methods.
@@ -129,7 +130,7 @@ class GUI(QMainWindow):
         self._split = False
         self.save_as_popup = None
         self.default_save_name = None
-        self.mode = 'offline'
+        self.mode = "offline"
         self.default_base_name = None
 
     def _init_layout(self):
@@ -157,7 +158,9 @@ class GUI(QMainWindow):
     def _check_for_unsaved_work(self):
         if os.path.exists(self._tmp_file_path):
             popup_warning_save(
-                "Something went wrong. You have unsaved stream session. Do you want to save the work? ", "Warning", self.popup_stream_unsaved
+                "Something went wrong. You have unsaved stream session. Do you want to save the work? ",
+                "Warning",
+                self.popup_stream_unsaved,
             )
             if self._delete_tmp:
                 self.log_box.log("Unsaved work was not saved. It will be deleted.")
@@ -186,7 +189,7 @@ class GUI(QMainWindow):
         self.toolbar.adjust_for_mode(False)
         self.stack.setCurrentWidget(self.stream_processing_widget)
         self.toolbar.save_config_button.setEnabled(True)
-        self.mode = 'stream'
+        self.mode = "stream"
 
     def go_offline_mode(self):
         """
@@ -196,10 +199,9 @@ class GUI(QMainWindow):
         self.toolbar.go_stream_button.setEnabled(True)
         self.toolbar.adjust_for_mode(True)
         self.stack.setCurrentWidget(self.processing_widget)
-        self.mode = 'offline'
+        self.mode = "offline"
         if self.processing_widget.file_path is None:
             self.toolbar.save_config_button.setEnabled(False)
-
 
     def notch_selected(self):
         """
@@ -244,7 +246,7 @@ class GUI(QMainWindow):
         # self.toolbar.save_files_button.setEnabled(True)
         path_tmp = Path(self.processing_widget.file_path)
         self.default_base_name = os.path.join(str(path_tmp.parent), path_tmp.stem)
-        self.default_save_name = os.path.join(str(path_tmp.parent), path_tmp.stem + '_processed' + path_tmp.suffix)
+        self.default_save_name = os.path.join(str(path_tmp.parent), path_tmp.stem + "_processed" + path_tmp.suffix)
         self.default_extension = path_tmp.suffix
         self.toolbar.save_config_button.setEnabled(True)
 
@@ -287,14 +289,14 @@ class GUI(QMainWindow):
         )
         if self.stack.currentWidget() == self.stream_processing_widget:
             return
-        
+
         if dialog.filename == "":
             return
         if self.processing_widget.canceled:
             return
         path_tmp = Path(self.processing_widget.file_path)
         self.default_base_name = os.path.join(str(path_tmp.parent), path_tmp.stem)
-        self.default_save_name = os.path.join(str(path_tmp.parent), path_tmp.stem + '_processed' + path_tmp.suffix)
+        self.default_save_name = os.path.join(str(path_tmp.parent), path_tmp.stem + "_processed" + path_tmp.suffix)
         self.toolbar.save_config_button.setEnabled(True)
         self.toolbar.save_as_config_button.setEnabled(True)
 

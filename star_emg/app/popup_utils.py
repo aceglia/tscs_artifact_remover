@@ -212,7 +212,7 @@ class SaveStreamPopup(QDialog):
         self.increment_suffix_checkbox.setChecked(True)
         layout.addWidget(self.increment_suffix_checkbox, 2, 0, 1, 3)
 
-        #TODO: add option to use zarr format and compression
+        # TODO: add option to use zarr format and compression
 
         # self.use_zarr_checkbox = QCheckBox("Use Zarr format")
         # self.use_zarr_checkbox.setChecked(self.use_zarr)
@@ -302,7 +302,7 @@ class SaveStreamPopup(QDialog):
                 new_base = f"{base}001"
             path = f"{new_base}{ext}"
         return path
-    
+
     @property
     def save_path(self):
         if self.save_folder is None or self.save_name is None:

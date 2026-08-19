@@ -13,6 +13,7 @@ class RtArtifactRemover(ArtifactRemover):
     It is based on the ArtifactRemover class and it is designed to work in real-time.
     Convenient offline mode can be used to stream from a file.
     """
+
     def __init__(self, window_size=None, data=None, update_svd_every=1, **data_loader_kwargs):
         """
         Initialize the artifact remover.
@@ -99,7 +100,9 @@ class RtArtifactRemover(ArtifactRemover):
                 tmp_data = None
             self.buffer = CircularBuffer(1, process_kwargs["window_size"])
             if tmp_data is not None:
-                self.buffer.append(x=tmp_data[-process_kwargs["window_size"]:], t=tmp_time[-process_kwargs["window_size"]:])
+                self.buffer.append(
+                    x=tmp_data[-process_kwargs["window_size"] :], t=tmp_time[-process_kwargs["window_size"] :]
+                )
 
         self.buffer.append(data)
         if not self.buffer.full:

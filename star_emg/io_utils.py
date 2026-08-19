@@ -11,10 +11,12 @@ from star_emg.processing_utils import filter_data
 
 ArrayLike = np.ndarray
 
+
 class FileType(Enum):
     TXT = "txt"
     BIO = "bio"
     MAT = "mat"
+
 
 def write_txt_file(
     data: np.ndarray,
@@ -455,7 +457,9 @@ class DataLoader:
         self.time_vector = None
 
         if self.path.endswith(".txt"):
-            self.data, self.channel_names, self.frames, self.data_rate, self.time_vector = load_txt_file(self.path, self.delimiter)
+            self.data, self.channel_names, self.frames, self.data_rate, self.time_vector = load_txt_file(
+                self.path, self.delimiter
+            )
         elif self.path.endswith(".bio"):
             self.data, self.channel_names, self.frames, self.data_rate = load_bio_file(self.path, self.channel_names)
         elif self.path.endswith(".mat"):
@@ -468,7 +472,7 @@ class DataLoader:
             self.data_rate = self.loading_params["data_rate"]
         elif self.data_rate is None:
             raise ValueError("Data rate must be provided if not loaded from file")
-        
+
         if self.time_vector is None:
             self.time_vector = np.repeat(
                 (np.arange(0, self.data.shape[-1]) / self.data_rate)[None],

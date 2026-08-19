@@ -596,7 +596,7 @@ class StreamPlotter(Plotter):
             if self._current_block != block_idx:
                 self.parent.update_streaming_frame(block_idx)
             return
-        
+
         if self.parent.filter_disabled:
             self.parent.remover_options.enable(all=True)
             self.parent.parent.toolbar.filter_menu.setEnabled(True)
@@ -818,4 +818,3 @@ class StreamPlotter(Plotter):
             for plot in self.plot_list
             if plot.visible is True
         ]
-        

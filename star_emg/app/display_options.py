@@ -241,7 +241,7 @@ class StreamDisplayWidget(DisplayWidget):
     def on_prev_frame_clicked(self):
         self._update_frame_number("prev")
         self.on_frame_changed()
-    
+
     def on_next_frame_clicked(self):
         if self.is_sampling_frame:
             return
@@ -255,7 +255,7 @@ class StreamDisplayWidget(DisplayWidget):
         self.prev_frame.setEnabled(True)
         self.next_frame.setEnabled(True)
         self.sampling_frame.setEnabled(True)
-    
+
     def on_frame_changed(self, text=None):
         if text == "":
             return
@@ -263,7 +263,7 @@ class StreamDisplayWidget(DisplayWidget):
             self._update_frame_number(value=text)
         self.input_frame.setText(str(self.current_frame + 1))
         self.parent.update_frame(self.current_frame)
-    
+
     def _update_frame_number(self, direction=None, value=None):
         if direction == "prev":
             self.current_frame -= 1
@@ -304,7 +304,7 @@ class StreamDisplayWidget(DisplayWidget):
     @property
     def is_sampling_frame(self):
         return self.current_frame == self.n_frames
-    
+
     @property
     def n_frames(self):
         if self.frame_list == []:

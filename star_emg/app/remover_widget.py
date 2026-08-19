@@ -693,7 +693,7 @@ class OfflineRemover(Remover):
 
     def get_channels(self):
         return self.remover.data_loader.channel_names
-    
+
     def set_channels(self, channels: list):
         """
         Set the channels to be processed.

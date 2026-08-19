@@ -90,7 +90,7 @@ class ArtifactRemover:
         Parameters
         ------------
         hankel_size : int
-            The numebr of lines of the Hankel matrix.
+            The number of lines of the Hankel matrix.
         randomized : bool
             Whether to use randomized SVD.
         post_filter : bool
